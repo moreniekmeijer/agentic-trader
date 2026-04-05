@@ -22,6 +22,9 @@ class AlpacaController:
     def get_positions(self):
         return self.client.get_all_positions()
 
+    def get_orders(self):
+        return self.client.get_orders()
+
     def place_market_order(self, symbol: str, qty: float, side: str):
         try:
             order = MarketOrderRequest(

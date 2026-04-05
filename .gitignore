@@ -25,4 +25,4 @@ htmlcov/
 .idea/
 .vscode/
 
-*.tmp
+tmp/

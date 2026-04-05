@@ -9,6 +9,9 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "alpaca-py",
+    "pandas",
+    "pytz",
+    "yfinance",
     "pydantic",
     "python-dotenv",
 ]
