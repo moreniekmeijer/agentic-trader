@@ -61,21 +61,13 @@ test-cov:
 # ------------------------
 # RUN
 # ------------------------
-run:
-	@echo "Starting FastAPI app..."
-	uv run src/main.py
-
-run-prod:
-	@echo "Starting production server..."
-	uv run uvicorn src.main:app --host 0.0.0.0 --port 8000
-
 run-worker:
-	@echo "Starting worker..."
-	uv run python -m src.apps.worker
+	@echo "Starting trading worker..."
+	uv run src/worker/trading_loop.py
 
-run-orchestrator:
-	@echo "Starting orchestrator..."
-	uv run python -m src.apps.orchestrator
+run-main:
+	@echo "Starting main app..."
+	uv run src/main.py
 
 # ------------------------
 # UTIL

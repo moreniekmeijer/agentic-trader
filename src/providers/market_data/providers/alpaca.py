@@ -5,7 +5,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
-from services.market_data.provider.provider import MarketDataProvider
+from providers.market_data.providers.provider import MarketDataProvider
 
 
 class AlpacaProvider(MarketDataProvider):

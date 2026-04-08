@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "uvicorn",
+    "apscheduler",
     "alpaca-py",
     "pandas",
     "pytz",

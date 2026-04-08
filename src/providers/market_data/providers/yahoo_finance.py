@@ -1,12 +1,12 @@
 import yfinance as yf
 
-from services.market_data.provider.provider import MarketDataProvider
+from providers.market_data.providers.provider import MarketDataProvider
 
 
 class YahooFinanceProvider(MarketDataProvider):
-    def get_bars(self, symbol: str, days: int = 200):
+    def get_bars(self, symbol: str, days: int = 200, interval: str = "1d"):
         period = f"{days}d"
-        data = yf.download(symbol, period=period, interval="1d", progress=False)
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
         data = data.rename(
             columns={
                 "Open": "open",
