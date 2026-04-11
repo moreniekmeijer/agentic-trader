@@ -1,5 +1,4 @@
 VENV_DIR := .venv
-PYTHON := python3
 
 .PHONY: all venv install sync lint format typecheck test run run-worker clean reset
 
@@ -13,13 +12,12 @@ all: install format lint typecheck test
 # ------------------------
 $(VENV_DIR):
 	@echo "Creating virtual environment in $(VENV_DIR)..."
-	uv python install
 	uv venv $(VENV_DIR)
 
 venv: $(VENV_DIR)
 
 install: $(VENV_DIR)
-	@echo "Installing dependencies..."
+	@echo "Syncing dependencies..."
 	uv sync
 
 sync:
@@ -40,7 +38,7 @@ format:
 
 typecheck:
 	@echo "Running type checks (ty)..."
-	uv run ty check src/
+	uv run ty check .
 
 # ------------------------
 # TESTING
@@ -52,7 +50,7 @@ test:
 test-cov:
 	@echo "Running tests with coverage..."
 	uv run pytest \
-		--cov=src \
+		--cov=agentic_trader \
 		--cov-report=term \
 		--cov-report=xml:coverage.xml \
 		--junitxml=report.xml \
@@ -63,11 +61,11 @@ test-cov:
 # ------------------------
 run-worker:
 	@echo "Starting trading worker..."
-	uv run src/worker/trading_loop.py
+	uv run python -m agentic_trader.worker.worker
 
 run-main:
 	@echo "Starting main app..."
-	uv run src/main.py
+	uv run python -m agentic_trader.main
 
 # ------------------------
 # UTIL

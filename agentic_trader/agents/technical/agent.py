@@ -1,5 +1,9 @@
-from agents.technical.models import TechnicalAgentResponse
-from providers.market_data.response import MultiTimeframeSnapshot
+from typing import Literal
+
+from agentic_trader.agents.technical.models import TechnicalAgentResponse
+from agentic_trader.services.market_data.response import MultiTimeframeSnapshot
+
+Signal = Literal["BUY", "SELL", "HOLD"]
 
 
 class TechnicalAgent:
@@ -18,7 +22,7 @@ class TechnicalAgent:
         reasons_sell = []
 
         # -----------------------------
-        # RSI signals
+        # RSI
         # -----------------------------
         if h4.rsi_cross_30 and h4.rsi_trend == "UP":
             score_buy += 0.3
@@ -61,6 +65,7 @@ class TechnicalAgent:
         # -----------------------------
         # Weigh signals
         # -----------------------------
+        signal: Signal
         if score_buy >= self.buy_threshold and score_buy > score_sell:
             signal = "BUY"
             confidence = min(score_buy, 1.0)

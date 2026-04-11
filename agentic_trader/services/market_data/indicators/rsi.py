@@ -1,4 +1,4 @@
-from providers.market_data.indicators.indicator import Indicator
+from agentic_trader.services.market_data.indicators.indicator import Indicator
 
 
 class RSIIndicator(Indicator):

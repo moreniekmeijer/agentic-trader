@@ -3,5 +3,5 @@ from abc import ABC, abstractmethod
 
 class MarketDataProvider(ABC):
     @abstractmethod
-    def get_bars(self, symbol: str, days: int):
+    def get_bars(self, symbol: str, days: int = 200, interval: str = "1d"):
         pass
