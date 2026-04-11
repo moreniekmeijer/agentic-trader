@@ -133,10 +133,6 @@ def trade_job() -> None:
             agent = TechnicalAgent(symbol=symbol)
             response = agent.generate_signal(multi_timeframe_snapshot)
 
-            if response.confidence < 0.2:
-                logger.info(f"{symbol} skipped: confidence {response.confidence:.2f} below threshold")
-                continue
-
             decision_engine.execute_decision(response)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
