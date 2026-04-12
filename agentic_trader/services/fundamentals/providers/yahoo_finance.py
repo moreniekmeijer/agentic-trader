@@ -56,4 +56,6 @@ class YahooFundamentalsProvider(FundamentalsProvider):
             return_on_equity=_safe_float(info, "returnOnEquity"),
             analyst_rating=_parse_rating(info),
             price_target=_safe_float(info, "targetMeanPrice"),
+            sector=info.get("sector"),
+            industry=info.get("industry"),
         )

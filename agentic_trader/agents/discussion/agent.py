@@ -2,28 +2,17 @@ from __future__ import annotations
 
 import logging
 
-from agentic_trader.agents.models import AgentResponse
-from agentic_trader.discussion.models import AgentVote, AggregatedResponse, Signal
+from agentic_trader.agents.models import AgentResponse, AgentVote, AggregatedResponse, Signal
 
 logger = logging.getLogger(__name__)
 
 
-class DiscussionEngine:
-    """
-    Aggregeert AgentResponse votes naar één AggregatedResponse via gewogen stemming.
-
-    Gewichten bepalen hoeveel invloed een agent heeft op het eindsignaal.
-    Totaal hoeft niet op 1.0 te sommeren — scores worden genormaliseerd.
-
-    Later uit te breiden met een AI-deliberatie stap die de votes als
-    context meekrijgt en een gemotiveerd eindoordeel geeft.
-    """
-
+class DiscussionAgent:
     def __init__(self, weights: dict[str, float]):
         """
         Args:
-            weights: mapping van agent naam naar gewicht.
-                     Bijv. {"technical": 0.7, "fundamentals": 0.3}
+            weights:
+                     E.g. {"technical": 0.7, "fundamentals": 0.3}
         """
         self.weights = weights
 

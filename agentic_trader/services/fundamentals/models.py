@@ -24,3 +24,5 @@ class FundamentalsSnapshot(BaseModel):
     analyst_rating: AnalystRating | None
     price_target: float | None
     
+    sector: str | None
+    industry: str | None

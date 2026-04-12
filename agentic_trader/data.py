@@ -64,7 +64,6 @@ sp500_symbols = [
     "SCHW",
     "CI",
     "CB",
-    "MMC",
     "AMAT",
     "LRCX",
     "GILD",

@@ -7,13 +7,13 @@ from typing import Dict
 from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
+from agentic_trader.agents.discussion.agent import DiscussionAgent
 from agentic_trader.agents.fundamental.agent import FundamentalsAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.config.logging import setup_logging
 from agentic_trader.controller.alpaca_controller import AlpacaController
 from agentic_trader.data import sp500_symbols
 from agentic_trader.decision.engine import DecisionEngine
-from agentic_trader.discussion.engine import DiscussionEngine
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
 from agentic_trader.services.fundamentals.fundamentals_engine import FundamentalsEngine
@@ -73,8 +73,8 @@ def build_fundamentals_pipeline() -> FundamentalsEngine:
     return FundamentalsEngine(provider)
 
 
-def build_discussion_engine() -> DiscussionEngine:
-    return DiscussionEngine(weights={
+def build_discussion_agent() -> DiscussionAgent:
+    return DiscussionAgent(weights={
         "technical": 0.7,
         "fundamentals": 0.3,
     })
@@ -146,7 +146,7 @@ def trade_job() -> None:
     risk_engine = RiskEngine(controller)
     decision_engine = DecisionEngine(controller, risk_engine)
     multi_engine = build_trade_pipeline()
-    discussion_engine = build_discussion_engine()
+    discussion_engine = build_discussion_agent()
 
     for symbol in state.symbols:
         try:
@@ -161,7 +161,7 @@ def trade_job() -> None:
 def _trade_symbol(
     symbol: str,
     multi_engine: MultiTimeframeEngine,
-    discussion_engine: DiscussionEngine,
+    discussion_engine: DiscussionAgent,
     decision_engine: DecisionEngine,
 ) -> None:
     cached = state.get_market(symbol)
