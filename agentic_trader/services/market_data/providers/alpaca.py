@@ -2,7 +2,7 @@ import os
 
 from alpaca.data.historical import StockHistoricalDataClient
 
-from agentic_trader.services.market_data.providers.provider import MarketDataProvider
+from agentic_trader.services.market_data.provider import MarketDataProvider
 
 
 class AlpacaProvider(MarketDataProvider):

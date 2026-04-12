@@ -2,6 +2,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+RsiTrend = Literal["UP", "DOWN"]
+Trend = Literal["BULLISH", "BEARISH"]
+
 
 class MarketDataSnapshot(BaseModel):
     symbol: str
@@ -10,13 +13,13 @@ class MarketDataSnapshot(BaseModel):
 
     rsi: float | None
     rsi_prev: float | None
-    rsi_trend: Literal["UP", "DOWN"] | None
+    rsi_trend: RsiTrend | None
 
     rsi_cross_30: bool | None
     rsi_cross_70: bool | None
 
     ma_50: float | None
-    trend: Literal["BULLISH", "BEARISH"] | None
+    trend: Trend | None
 
     volume: float | None
     volume_avg: float | None

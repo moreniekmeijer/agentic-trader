@@ -1,6 +1,6 @@
 import logging
 
-from agentic_trader.agents.technical.models import TechnicalAgentResponse
+from agentic_trader.agents.models import AgentResponse
 from agentic_trader.risk.engine import RiskEngine
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ class DecisionEngine:
         self.alpaca = alpaca_controller
         self.risk = risk_engine
 
-    def execute_decision(self, response: TechnicalAgentResponse) -> None:
+    def execute_decision(self, response: AgentResponse) -> None:
         verdict = self.risk.can_trade(response)
 
         if not verdict.allowed:

@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Dict
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
+from agentic_trader.agents.fundamental.agent import FundamentalsAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.config.logging import setup_logging
 from agentic_trader.controller.alpaca_controller import AlpacaController
 from agentic_trader.data import sp500_symbols
 from agentic_trader.decision.engine import DecisionEngine
+from agentic_trader.discussion.engine import DiscussionEngine
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
+from agentic_trader.services.fundamentals.fundamentals_engine import FundamentalsEngine
+from agentic_trader.services.fundamentals.providers.yahoo_finance import YahooFundamentalsProvider
 from agentic_trader.services.market_data.feature_builder import FeatureBuilder
 from agentic_trader.services.market_data.indicators.ma import MovingAverageIndicator
 from agentic_trader.services.market_data.indicators.rsi import RSIIndicator
@@ -21,7 +26,7 @@ from agentic_trader.services.market_data.market_data_engine import MarketDataEng
 from agentic_trader.services.market_data.multi_timeframe_engine import MultiTimeframeEngine
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
 from agentic_trader.worker.models import CACHE_MAX_AGE, TimeframeData
-from agentic_trader.worker.scan_state import ScanState
+from agentic_trader.worker.scan_state import WorkerState
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +35,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 SYMBOLS = sp500_symbols[:100]
-SCAN_INTERVAL = 60  # minutes
-TRADE_INTERVAL = 5  # minutes
+SCAN_INTERVAL = 60      # minutes
+TRADE_INTERVAL = 5      # minutes
+FUNDAMENTALS_INTERVAL = 60  # minutes
 
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
 
-state = ScanState()
+state = WorkerState()
 
 # ---------------------------------------------------------------------------
 # Pipeline factories
 # ---------------------------------------------------------------------------
 
 def build_scan_pipeline():
-    """Lightweight pipeline used by the scanner (RSI + Volume only)."""
+    """Lightweight pipeline: RSI + Volume."""
     provider = YahooFinanceProvider()
     engine = MarketDataEngine(indicators=[RSIIndicator(), VolumeIndicator()])
     features = FeatureBuilder()
@@ -52,18 +58,33 @@ def build_scan_pipeline():
 
 
 def build_trade_pipeline() -> MultiTimeframeEngine:
-    """Full pipeline used per trading cycle (RSI + MA50 + Volume)."""
+    """Full pipeline: RSI + MA50 + Volume."""
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()])
+    engine = MarketDataEngine(
+        indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()]
+    )
     features = FeatureBuilder()
     return MultiTimeframeEngine(provider, engine, features)
+
+
+def build_fundamentals_pipeline() -> FundamentalsEngine:
+    """Fundamentals pipeline."""
+    provider = YahooFundamentalsProvider()
+    return FundamentalsEngine(provider)
+
+
+def build_discussion_engine() -> DiscussionEngine:
+    return DiscussionEngine(weights={
+        "technical": 0.7,
+        "fundamentals": 0.3,
+    })
 
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
 
 def scan_job() -> None:
-    logger.info("Running scanner job")
+    logger.info("Running scanner job...")
 
     provider, engine, features = build_scan_pipeline()
     scanner = ScannerEngine(provider, engine, features)
@@ -76,67 +97,111 @@ def scan_job() -> None:
 
     top_symbols = [r.symbol for r in results]
 
-    # Explicitly cache raw (uncomputed) df per symbol.
-    # trade_job will apply its own wider indicator set on top of this raw data.
-    raw_cache: Dict[str, TimeframeData] = {}
+    market_cache: Dict[str, TimeframeData] = {}
     for symbol in top_symbols:
         try:
-            raw_cache[symbol] = TimeframeData(
+            market_cache[symbol] = TimeframeData(
                 daily=provider.get_bars(symbol, interval="1d"),
                 h4=provider.get_bars(symbol, interval="4h"),
             )
         except Exception as e:
-            logger.warning(f"Failed to cache data for {symbol}: {e}")
+            logger.warning(f"Failed to cache market data for {symbol}: {e}")
 
-    if not raw_cache:
+    if not market_cache:
         logger.warning("Could not cache any symbol data, skipping state update")
         return
 
-    print(f"Cached {len(raw_cache)} symbols")
+    valid_symbols = [s for s in top_symbols if s in market_cache]
+    state.update_market(symbols=valid_symbols, cache=market_cache)
+    logger.info(f"Scan complete — shortlist: {valid_symbols}")
 
-    valid_symbols = [s for s in top_symbols if s in raw_cache]
-    state.update(symbols=valid_symbols, cache=raw_cache)
+
+def fundamentals_job() -> None:
+    logger.info("Running fundamentals job")
+
+    symbols = state.symbols
+    if not symbols:
+        logger.info("No symbols in state yet, skipping fundamentals fetch")
+        return
+
+    engine = build_fundamentals_pipeline()
+    snapshots = engine.fetch_many(symbols)
+
+    if not snapshots:
+        logger.warning("No fundamentals fetched, keeping previous cache")
+        return
+
+    state.update_fundamentals(snapshots)
+    logger.info(f"Fundamentals updated for: {list(snapshots.keys())}")
 
 
 def trade_job() -> None:
     logger.info("Starting trading cycle")
 
-    scan = state.get()
-
-    if scan is None:
-        logger.info("No scan results yet, skipping")
-        return
-
-    if not scan.is_fresh():
-        logger.warning(f"Cache is stale (> {CACHE_MAX_AGE}), skipping trading")
+    if not state.is_market_fresh():
+        logger.warning(f"Market cache is stale (> {CACHE_MAX_AGE}), skipping trading")
         return
 
     controller = AlpacaController()
     risk_engine = RiskEngine(controller)
     decision_engine = DecisionEngine(controller, risk_engine)
-
     multi_engine = build_trade_pipeline()
+    discussion_engine = build_discussion_engine()
 
-    for symbol in scan.symbols:
+    for symbol in state.symbols:
         try:
-            cached: TimeframeData | None = scan.cache.get(symbol)
-            if cached is None:
-                logger.warning(f"No cached data for {symbol}, skipping")
-                continue
-
-            multi_timeframe_snapshot = multi_engine.compute_from_cache(
-                symbol=symbol,
-                df_daily=cached.daily,
-                df_4h=cached.h4,
-            )
-
-            agent = TechnicalAgent(symbol=symbol)
-            response = agent.generate_signal(multi_timeframe_snapshot)
-
-            decision_engine.execute_decision(response)
+            _trade_symbol(symbol, multi_engine, discussion_engine, decision_engine)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
 
+# ---------------------------------------------------------------------------
+# Per-symbol trade logic
+# ---------------------------------------------------------------------------
+
+def _trade_symbol(
+    symbol: str,
+    multi_engine: MultiTimeframeEngine,
+    discussion_engine: DiscussionEngine,
+    decision_engine: DecisionEngine,
+) -> None:
+    cached = state.get_market(symbol)
+    if cached is None:
+        logger.warning(f"{symbol}: no cached market data, skipping")
+        return
+
+    votes = []
+
+    # --- Technical agent ---
+    mtf_snapshot = multi_engine.compute_from_cache(
+        symbol=symbol,
+        df_daily=cached.daily,
+        df_4h=cached.h4,
+    )
+    votes.append(
+        TechnicalAgent(
+            symbol=symbol,
+            buy_threshold=0.3,
+            sell_threshold=0.3,
+        ).generate_signal(mtf_snapshot)
+    )
+
+    # --- Fundamentals agent ---
+    fund_snapshot = state.get_fundamentals(symbol)
+    if fund_snapshot is not None:
+        votes.append(
+            FundamentalsAgent(
+                symbol=symbol,
+                buy_threshold=0.3,
+                sell_threshold=0.3,
+            ).generate_signal(fund_snapshot))
+    else:
+        logger.debug(f"{symbol}: no fundamentals available, technical only")
+
+    # --- Discussion ---
+    aggregated = discussion_engine.discuss(symbol=symbol, responses=votes)
+
+    # --- Decision + Risk + Execute ---
+    decision_engine.execute_decision(aggregated)
 
 # ---------------------------------------------------------------------------
 # Entrypoint
@@ -148,11 +213,12 @@ if __name__ == "__main__":
 
     logger.info("Starting worker")
 
-    # Prime the state before the scheduler takes over
     scan_job()
+    fundamentals_job()
     trade_job()
 
     scheduler = BlockingScheduler()
     scheduler.add_job(scan_job, "interval", minutes=SCAN_INTERVAL)
+    scheduler.add_job(fundamentals_job, "interval", minutes=FUNDAMENTALS_INTERVAL)
     scheduler.add_job(trade_job, "interval", minutes=TRADE_INTERVAL)
     scheduler.start()

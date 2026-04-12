@@ -2,10 +2,7 @@ from typing import Literal
 
 import pandas as pd
 
-from agentic_trader.services.market_data.response import MarketDataSnapshot
-
-RsiTrend = Literal["UP", "DOWN"]
-Trend = Literal["BULLISH", "BEARISH"]
+from agentic_trader.services.market_data.response import MarketDataSnapshot, RsiTrend, Trend
 
 
 class FeatureBuilder:
@@ -28,11 +25,11 @@ class FeatureBuilder:
 
         trend: Trend | None = None
         if ma_50 and close:
-            trend = "BULLISH" if close > ma_50 else "BEARISH"
+            trend: Trend = "BULLISH" if close > ma_50 else "BEARISH"
 
         rsi_trend: RsiTrend | None = None
         if rsi and prev_rsi:
-            rsi_trend = "UP" if rsi > prev_rsi else "DOWN"
+            rsi_trend: RsiTrend = "UP" if rsi > prev_rsi else "DOWN"
 
         return MarketDataSnapshot(
             symbol=symbol,

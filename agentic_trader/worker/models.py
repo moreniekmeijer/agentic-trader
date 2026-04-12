@@ -4,7 +4,10 @@ from typing import Dict, List
 import pandas as pd
 from pydantic import BaseModel
 
+from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
+
 CACHE_MAX_AGE = timedelta(minutes=90)
+FUNDAMENTALS_MAX_AGE = timedelta(hours=24)
 
 
 class TimeframeData(BaseModel):
@@ -17,6 +20,8 @@ class TimeframeData(BaseModel):
 
 
 class SymbolCache(BaseModel):
+    """Raw market data per symbol."""
+
     data: Dict[str, TimeframeData]
 
     model_config = {"arbitrary_types_allowed": True}
@@ -24,9 +29,30 @@ class SymbolCache(BaseModel):
     def get(self, symbol: str) -> TimeframeData | None:
         return self.data.get(symbol)
 
+    def symbols(self) -> List[str]:
+        return list(self.data.keys())
+
+
+class FundamentalsCache(BaseModel):
+    """Fundamentals per symbol, refreshed daily."""
+
+    data: Dict[str, FundamentalsSnapshot] = {}
+
+    def get(self, symbol: str) -> FundamentalsSnapshot | None:
+        return self.data.get(symbol)
+
+    def is_fresh(self, symbol: str) -> bool:
+        snapshot = self.data.get(symbol)
+        if snapshot is None:
+            return False
+        return datetime.now(timezone.utc) - snapshot.fetched_at < FUNDAMENTALS_MAX_AGE
+
+    def update(self, snapshots: Dict[str, FundamentalsSnapshot]) -> None:
+        self.data.update(snapshots)
+
 
 class ScanSnapshot(BaseModel):
-    """Immutable snapshot of the latest scan, passed to trade_job."""
+    """Immutable snapshot of the last scan."""
 
     symbols: List[str]
     cache: SymbolCache

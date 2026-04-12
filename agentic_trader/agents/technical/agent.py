@@ -1,7 +1,7 @@
 import logging
 from typing import Literal
 
-from agentic_trader.agents.technical.models import TechnicalAgentResponse
+from agentic_trader.agents.agent import BaseAgent
 from agentic_trader.services.market_data.response import MultiTimeframeSnapshot
 
 logger = logging.getLogger(__name__)
@@ -9,20 +9,8 @@ logger = logging.getLogger(__name__)
 Signal = Literal["BUY", "SELL", "HOLD"]
 
 
-class TechnicalAgent:
-    def __init__(
-        self,
-        symbol: str,
-        buy_threshold: float = 0.4,
-        sell_threshold: float = 0.4,
-        bias: float = 0.0
-    ):
-        self.symbol = symbol
-        self.buy_threshold = buy_threshold
-        self.sell_threshold = sell_threshold
-        self.bias = max(-1.0, min(1.0, bias))
-
-    def generate_signal(self, data: MultiTimeframeSnapshot) -> TechnicalAgentResponse:
+class TechnicalAgent (BaseAgent):
+    def _compute_scores(self, data: MultiTimeframeSnapshot):
         daily = data.daily
         h4 = data.h4
 
@@ -97,34 +85,4 @@ class TechnicalAgent:
             reasons_buy.append("H4 volume spike")
             reasons_sell.append("H4 volume spike")
 
-        # -----------------------------
-        # Bias
-        # -----------------------------
-        if self.bias != 0.0:
-            score_buy = max(0.0, score_buy + self.bias * 0.2)
-            score_sell = max(0.0, score_sell - self.bias * 0.2)
-
-        # -----------------------------
-        # Weigh signals
-        # -----------------------------
-
-        signal: Signal
-        if score_buy >= self.buy_threshold and score_buy > score_sell:
-            signal = "BUY"
-            confidence = min(score_buy, 1.0)
-            reasoning = reasons_buy
-        elif score_sell >= self.sell_threshold and score_sell > score_buy:
-            signal = "SELL"
-            confidence = min(score_sell, 1.0)
-            reasoning = reasons_sell
-        else:
-            signal = "HOLD"
-            confidence = 0.0
-            reasoning = ["No strong BUY/SELL signals"]
-
-        return TechnicalAgentResponse(
-            symbol=self.symbol,
-            signal=signal,
-            confidence=round(confidence, 2),
-            reasoning=reasoning,
-        )
+        return score_buy, score_sell, reasons_buy, reasons_sell

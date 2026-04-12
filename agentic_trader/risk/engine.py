@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from agentic_trader.agents.technical.models import TechnicalAgentResponse
+from agentic_trader.agents.models import AgentResponse
 from agentic_trader.risk.models import RiskVerdict
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ class RiskEngine:
         alpaca_controller,
         max_position_size: int = 5,
         max_total_positions: int = 5,
-        min_confidence: float = 0.2,
+        min_confidence: float = 0.3,
         cooldown_minutes: int = 10,
     ):
         self.alpaca = alpaca_controller
@@ -24,7 +24,7 @@ class RiskEngine:
 
         self._last_trade: dict[str, datetime] = {}
 
-    def can_trade(self, response: TechnicalAgentResponse) -> RiskVerdict:
+    def can_trade(self, response: AgentResponse) -> RiskVerdict:
         if response.confidence < self.min_confidence:
             return RiskVerdict(
                 allowed=False,

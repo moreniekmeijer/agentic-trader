@@ -2,7 +2,7 @@ import pandas as pd
 
 from agentic_trader.services.market_data.feature_builder import FeatureBuilder
 from agentic_trader.services.market_data.market_data_engine import MarketDataEngine
-from agentic_trader.services.market_data.providers.provider import MarketDataProvider
+from agentic_trader.services.market_data.provider import MarketDataProvider
 from agentic_trader.services.market_data.response import MultiTimeframeSnapshot
 
 

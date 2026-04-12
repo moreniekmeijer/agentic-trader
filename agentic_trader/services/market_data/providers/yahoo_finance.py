@@ -1,7 +1,7 @@
+from agentic_trader.services.market_data.provider import MarketDataProvider
 import pandas as pd
 import yfinance
 
-from agentic_trader.services.market_data.providers.provider import MarketDataProvider
 
 
 class YahooFinanceProvider(MarketDataProvider):
