@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 Signal = Literal["BUY", "SELL", "HOLD"]
 
 _WEIGHTS = {
-    "growth":   0.18,
-    "pe":       0.22,
-    "margin":   0.18,
-    "de":       0.18,
-    "roe":      0.18,
-    "analyst":  0.06,
+    "growth": 0.18,
+    "pe": 0.22,
+    "margin": 0.18,
+    "de": 0.18,
+    "roe": 0.18,
+    "analyst": 0.06,
 }
 assert abs(sum(_WEIGHTS.values()) - 1.0) < 1e-9, "Weights must sum to 1.0"
 
@@ -52,9 +52,7 @@ class FundamentalsAgent(BaseAgent):
             else:
                 return 0.0, deviation * weight, deviation
 
-    def _score_growth(
-        self, growth: float
-    ) -> tuple[float, float, list[str], list[str]]:
+    def _score_growth(self, growth: float) -> tuple[float, float, list[str], list[str]]:
         """
         Scores revenue growth on the same [-1, 1] deviation scale as other
         metrics, capped at ±50% growth as the reference ceiling.
@@ -111,19 +109,13 @@ class FundamentalsAgent(BaseAgent):
         )
 
         if dev < 0:
-            reasons_buy.append(
-                f"Undervalued vs sector P/E ({adj_pe:.1f} vs {baseline_pe:.1f})"
-            )
+            reasons_buy.append(f"Undervalued vs sector P/E ({adj_pe:.1f} vs {baseline_pe:.1f})")
         else:
-            reasons_sell.append(
-                f"Expensive vs sector P/E ({adj_pe:.1f} vs {baseline_pe:.1f})"
-            )
+            reasons_sell.append(f"Expensive vs sector P/E ({adj_pe:.1f} vs {baseline_pe:.1f})")
 
         return buy, sell, reasons_buy, reasons_sell
 
-    def _compute_scores(
-        self, data: FundamentalsSnapshot
-    ) -> tuple[float, float, list[str], list[str]]:
+    def _compute_scores(self, data: FundamentalsSnapshot) -> tuple[float, float, list[str], list[str]]:
         score_buy = 0.0
         score_sell = 0.0
         reasons_buy: list[str] = []

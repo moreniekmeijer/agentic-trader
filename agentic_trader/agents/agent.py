@@ -77,8 +77,6 @@ class BaseAgent(ABC):
         score_buy = self._clamp(score_buy)
         score_sell = self._clamp(score_sell)
 
-        signal, confidence, reasons = self._decide(
-            score_buy, score_sell, reasons_buy, reasons_sell
-        )
+        signal, confidence, reasons = self._decide(score_buy, score_sell, reasons_buy, reasons_sell)
 
         return self._build_response(signal, confidence, reasons)

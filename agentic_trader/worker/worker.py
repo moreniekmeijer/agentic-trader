@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from typing import Dict
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -13,6 +12,7 @@ from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.config.logging import setup_logging
 from agentic_trader.controller.alpaca_controller import AlpacaController
 from agentic_trader.data import sp500_symbols
+from agentic_trader.database.session import get_session
 from agentic_trader.decision.engine import DecisionEngine
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-SYMBOLS = sp500_symbols[:100]
-SCAN_INTERVAL = 60      # minutes
-TRADE_INTERVAL = 5      # minutes
+SYMBOLS = sp500_symbols[:10]
+SCAN_INTERVAL = 60  # minutes
+TRADE_INTERVAL = 5  # minutes
 FUNDAMENTALS_INTERVAL = 60  # minutes
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,7 @@ state = WorkerState()
 # Pipeline factories
 # ---------------------------------------------------------------------------
 
+
 def build_scan_pipeline():
     """Lightweight pipeline: RSI + Volume."""
     provider = YahooFinanceProvider()
@@ -60,9 +61,7 @@ def build_scan_pipeline():
 def build_trade_pipeline() -> MultiTimeframeEngine:
     """Full pipeline: RSI + MA50 + Volume."""
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(
-        indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()]
-    )
+    engine = MarketDataEngine(indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()])
     features = FeatureBuilder()
     return MultiTimeframeEngine(provider, engine, features)
 
@@ -74,14 +73,18 @@ def build_fundamentals_pipeline() -> FundamentalsEngine:
 
 
 def build_discussion_agent() -> DiscussionAgent:
-    return DiscussionAgent(weights={
-        "technical": 0.7,
-        "fundamentals": 0.3,
-    })
+    return DiscussionAgent(
+        weights={
+            "technical": 0.7,
+            "fundamentals": 0.3,
+        }
+    )
+
 
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
+
 
 def scan_job() -> None:
     logger.info("Running scanner job...")
@@ -144,19 +147,22 @@ def trade_job() -> None:
 
     controller = AlpacaController()
     risk_engine = RiskEngine(controller)
-    decision_engine = DecisionEngine(controller, risk_engine)
     multi_engine = build_trade_pipeline()
     discussion_engine = build_discussion_agent()
 
     for symbol in state.symbols:
         try:
-            _trade_symbol(symbol, multi_engine, discussion_engine, decision_engine)
+            with get_session() as session:
+                decision_engine = DecisionEngine(controller, risk_engine, session=session)
+                _trade_symbol(symbol, multi_engine, discussion_engine, decision_engine)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
+
 
 # ---------------------------------------------------------------------------
 # Per-symbol trade logic
 # ---------------------------------------------------------------------------
+
 
 def _trade_symbol(
     symbol: str,
@@ -193,7 +199,8 @@ def _trade_symbol(
                 symbol=symbol,
                 buy_threshold=0.3,
                 sell_threshold=0.3,
-            ).generate_signal(fund_snapshot))
+            ).generate_signal(fund_snapshot)
+        )
     else:
         logger.debug(f"{symbol}: no fundamentals available, technical only")
 
@@ -202,6 +209,7 @@ def _trade_symbol(
 
     # --- Decision + Risk + Execute ---
     decision_engine.execute_decision(aggregated)
+
 
 # ---------------------------------------------------------------------------
 # Entrypoint

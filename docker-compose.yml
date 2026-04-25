@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:15
+    container_name: agentic_db
+    restart: always
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: agentic_trader
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: agentic_api
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://trader:trader@db:5432/agentic_trader
+    ports:
+      - "8000:8000"
+    command: uv run uvicorn agentic_trader.api.app:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build: .
+    container_name: agentic_worker
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://trader:trader@db:5432/agentic_trader
+    command: uv run python -m agentic_trader.worker.worker
+
+volumes:
+  postgres_data:

@@ -38,6 +38,7 @@ DEFAULT_BASELINE = {
     "roe": 0.10,
 }
 
+
 def get_baseline(sector: str | None) -> dict:
     if not sector:
         return DEFAULT_BASELINE

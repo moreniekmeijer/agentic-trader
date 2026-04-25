@@ -1,5 +1,3 @@
-from typing import Literal
-
 import pandas as pd
 
 from agentic_trader.services.market_data.response import MarketDataSnapshot, RsiTrend, Trend

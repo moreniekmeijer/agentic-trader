@@ -63,6 +63,10 @@ run-worker:
 	@echo "Starting trading worker..."
 	uv run python -m agentic_trader.worker.worker
 
+run-api:
+	@echo "Starting FastAPI server..."
+	uv run uvicorn agentic_trader.api.app:app --reload --port 8000
+
 run-main:
 	@echo "Starting main app..."
 	uv run python -m agentic_trader.main

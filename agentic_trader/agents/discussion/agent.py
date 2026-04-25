@@ -9,11 +9,6 @@ logger = logging.getLogger(__name__)
 
 class DiscussionAgent:
     def __init__(self, weights: dict[str, float]):
-        """
-        Args:
-            weights:
-                     E.g. {"technical": 0.7, "fundamentals": 0.3}
-        """
         self.weights = weights
 
     def discuss(self, symbol: str, responses: list[AgentResponse]) -> AggregatedResponse:
@@ -48,31 +43,25 @@ class DiscussionAgent:
             if weight == 0.0:
                 logger.debug(f"Agent '{response.agent}' has no weight, skipping")
                 continue
-            votes.append(AgentVote(
-                agent=response.agent,
-                signal=response.signal,
-                confidence=response.confidence,
-                reasoning=response.reasoning,
-                weight=weight,
-            ))
+            votes.append(
+                AgentVote(
+                    agent=response.agent,
+                    signal=response.signal,
+                    confidence=response.confidence,
+                    reasoning=response.reasoning,
+                    weight=weight,
+                )
+            )
         return votes
 
     def _aggregate(self, votes: list[AgentVote]) -> tuple[Signal, float, list[str]]:
         total_weight = sum(v.weight for v in votes)
 
-        buy_score = sum(
-            v.weighted_score for v in votes if v.signal == "BUY"
-        ) / total_weight
+        buy_score = sum(v.weighted_score for v in votes if v.signal == "BUY") / total_weight
 
-        sell_score = sum(
-            v.weighted_score for v in votes if v.signal == "SELL"
-        ) / total_weight
+        sell_score = sum(v.weighted_score for v in votes if v.signal == "SELL") / total_weight
 
-        reasoning = [
-            reason
-            for v in votes if v.signal != "HOLD"
-            for reason in v.reasoning
-        ]
+        reasoning = [reason for v in votes if v.signal != "HOLD" for reason in v.reasoning]
 
         if buy_score > sell_score and buy_score > 0:
             return "BUY", buy_score, reasoning or ["Aggregated BUY signal"]

@@ -12,7 +12,7 @@ class RiskEngine:
         self,
         alpaca_controller,
         max_position_size: int = 5,
-        max_total_positions: int = 5,
+        max_total_positions: int = 10,
         min_confidence: float = 0.3,
         cooldown_minutes: int = 10,
     ):

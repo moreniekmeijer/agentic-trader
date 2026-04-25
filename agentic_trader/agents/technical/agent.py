@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 Signal = Literal["BUY", "SELL", "HOLD"]
 
 
-class TechnicalAgent (BaseAgent):
+class TechnicalAgent(BaseAgent):
     def _compute_scores(self, data: MultiTimeframeSnapshot):
         daily = data.daily
         h4 = data.h4
