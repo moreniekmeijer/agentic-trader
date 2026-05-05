@@ -4,6 +4,7 @@
   "description": "Agentic trading system with Alpaca — manifest for AI agents (no secrets)",
   "entry_points": {
     "api": "agentic_trader/api/app.py",
+    "worker": "agentic_trader/worker/worker.py",
     "main_smoke": "agentic_trader/main.py"
   },
   "directories": {
@@ -12,7 +13,8 @@
     "fundamentals_providers": "agentic_trader/services/fundamentals/providers",
     "services": "agentic_trader/services",
     "database": "agentic_trader/database",
-    "controllers": "agentic_trader/controller"
+    "controllers": "agentic_trader/controller",
+    "worker": "agentic_trader/worker"
   },
   "important_files": {
     "agent_model": "agentic_trader/agents/models.py",
@@ -23,21 +25,23 @@
     "db_mapper": "agentic_trader/database/mapper.py",
     "db_repository": "agentic_trader/database/repository.py",
     "db_session": "agentic_trader/database/session.py",
+    "worker_loop": "agentic_trader/worker/worker.py",
     "market_data_engine": "agentic_trader/services/market_data/market_data_engine.py",
     "fundamentals_engine": "agentic_trader/services/fundamentals/fundamentals_engine.py"
   },
   "env_variables": [
     "DATABASE_URL",
+    "ENV_FILE",
     "ALPACA_API_KEY",
     "ALPACA_SECRET_KEY",
     "PYTHONPATH"
   ],
   "run_commands": [
-    "python -m venv .venv",
-    "source .venv/bin/activate",
-    "pip install -e .[dev]",
-    "uvicorn agentic_trader.api.app:app --reload",
-    "python agentic_trader/main.py"
+    "uv sync",
+    "make run-api",
+    "make run-worker",
+    "make run-main",
+    "docker-compose up -d --build"
   ],
   "test_commands": [
     "pytest"

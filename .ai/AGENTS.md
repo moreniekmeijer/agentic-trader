@@ -7,6 +7,7 @@ This file gives targeted, actionable guidance for AI coding assistants working i
 - Entry points:
   - `agentic_trader/main.py` — simple script used for quick Alpaca smoke tests.
   - `agentic_trader/api/app.py` — FastAPI app and DB lifecycle (create_tables() on startup in dev).
+  - `agentic_trader/worker/worker.py` — The core trading loop/scheduler (Scanner -> Fundamentals -> Decision).
 - Major subsystems (boundaries):
   - agents/ — individual agent implementations inherit `BaseAgent` (`agents/agent.py`) and return `AgentResponse`/`AggregatedResponse` (`agents/models.py`). AI changes to agent logic should preserve the response shape.
   - services/market_data & services/fundamentals — providers (Yahoo, Alpaca) and engines that compute indicators (`services/market_data/market_data_engine.py`, `services/fundamentals/fundamentals_engine.py`). Prefer adding new providers via the existing Provider base-classes.
@@ -29,16 +30,18 @@ This file gives targeted, actionable guidance for AI coding assistants working i
 
 4. Integration points & external deps (what to watch for)
 
-- Alpaca: wrapped by `controller/alpaca_controller.py`. Alpaca API keys are read from env: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`. This controller uses `alpaca-py` and also performs a fallback REST request for account activities.
+- Alpaca: wrapped by `controller/alpaca_controller.py`. Alpaca API keys are read via `dotenv` from a file path specified by the `ENV_FILE` environment variable.
 - Market data & fundamentals: `yfinance` is used (`services/*/providers/yahoo_finance.py`). Expect flaky network responses and occasionally missing keys in `yf.Ticker(...).info` — code already uses `_safe_float` and parsing guards.
 - Database: SQLAlchemy engine is built from `DATABASE_URL` in `.env` (see `database/session.py`). For local dev the app creates tables automatically (`create_tables()` in `api/app.py`). Production migrations are expected to be handled externally (Alembic) — do not add ad-hoc schema drops.
 
 5. Developer workflows & useful commands
 
-- Install & run (recommended): project uses Python >=3.11 and lists deps in `pyproject.toml`.
-  - Create venv, install deps: python -m venv .venv; source .venv/bin/activate; pip install -e .[dev]
-  - Run API locally: uvicorn agentic_trader.api.app:app --reload
-  - Quick Alpaca smoke: python agentic_trader/main.py (requires ALPACA env vars)
+- Install & run (recommended): project uses Python >=3.11 and `uv`.
+  - Install deps: `uv sync`
+  - Run API: `make run-api` (Port 8000 default, or specify `--port` as we did for 8002)
+  - Run Worker: `make run-worker`
+  - Docker: `docker-compose up -d --build` (API on 8002 by default in config)
+  - Quick Alpaca smoke: `make run-main` (Requires `ENV_FILE` env var)
 - Tests: pytest is configured. Run tests with `pytest` (tests/ directory exists). Keep tests small and avoid touching live Alpaca or network by mocking providers.
 
 6. Useful file references and examples (copy-as-needed)
