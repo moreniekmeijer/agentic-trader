@@ -19,8 +19,10 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://trader:trader@db:5432/agentic_trader
+    env_file:
+      - ${ENV_FILE}
     ports:
-      - "8000:8000"
+      - "8002:8000"
     command: uv run uvicorn agentic_trader.api.app:app --host 0.0.0.0 --port 8000
 
   worker:
@@ -30,6 +32,8 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://trader:trader@db:5432/agentic_trader
+    env_file:
+      - ${ENV_FILE}
     command: uv run python -m agentic_trader.worker.worker
 
 volumes:

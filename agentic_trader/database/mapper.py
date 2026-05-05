@@ -87,9 +87,11 @@ def to_agent_vote(
 # ---------------------------------------------------------------------------
 
 def extract_price(order: Any) -> float | None:
+    """Extraheer de prijs uit een Alpaca order object."""
     return (
         getattr(order, "filled_avg_price", None)
         or getattr(order, "avg_fill_price", None)
+        or getattr(order, "price", None)
         or None
     )
 

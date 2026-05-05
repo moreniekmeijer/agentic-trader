@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import logging
 from typing import Dict
 
@@ -26,6 +28,7 @@ from agentic_trader.services.market_data.market_data_engine import MarketDataEng
 from agentic_trader.services.market_data.multi_timeframe_engine import MultiTimeframeEngine
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
 from agentic_trader.worker.models import CACHE_MAX_AGE, TimeframeData
+from agentic_trader.worker.pnl_sync import PnlSyncJob
 from agentic_trader.worker.scan_state import WorkerState
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,7 @@ SYMBOLS = sp500_symbols[:10]
 SCAN_INTERVAL = 60  # minutes
 TRADE_INTERVAL = 5  # minutes
 FUNDAMENTALS_INTERVAL = 60  # minutes
+PNL_SYNC_INTERVAL = 60  # minuten
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -217,16 +221,18 @@ def _trade_symbol(
 
 if __name__ == "__main__":
     setup_logging()
-    load_dotenv()
+    load_dotenv(os.getenv("ENV_FILE"))
 
     logger.info("Starting worker")
 
     scan_job()
     fundamentals_job()
     trade_job()
+    pnl_sync = PnlSyncJob(AlpacaController())
 
     scheduler = BlockingScheduler()
     scheduler.add_job(scan_job, "interval", minutes=SCAN_INTERVAL)
     scheduler.add_job(fundamentals_job, "interval", minutes=FUNDAMENTALS_INTERVAL)
     scheduler.add_job(trade_job, "interval", minutes=TRADE_INTERVAL)
+    scheduler.add_job(pnl_sync.run, "interval", minutes=PNL_SYNC_INTERVAL)
     scheduler.start()

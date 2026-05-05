@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-
+import os
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -21,7 +21,7 @@ from agentic_trader.database.session import SessionLocal, create_tables, drop_ta
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     setup_logging()
-    load_dotenv()
+    load_dotenv(os.getenv("ENV_FILE"))
 
     # dev only
     # drop_tables()

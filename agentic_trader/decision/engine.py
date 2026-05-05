@@ -60,6 +60,11 @@ class DecisionEngine:
     def _execute_trade(self, response: AggregatedResponse):
         symbol = response.symbol
 
+        # Check for open orders first to avoid "insufficient qty" errors
+        if self.alpaca.has_open_orders(symbol):
+            logger.info(f"{symbol}: already has open orders, skipping")
+            return None
+
         if response.signal == "BUY":
             qty = self.risk.get_allowed_qty(symbol)
             if qty <= 0:
@@ -68,9 +73,9 @@ class DecisionEngine:
             return self.alpaca.buy(symbol, qty), qty
 
         if response.signal == "SELL":
-            qty = self.alpaca.get_position(symbol)
+            qty = self.alpaca.get_available_qty(symbol)
             if qty <= 0:
-                logger.info(f"{symbol}: no position to sell")
+                logger.info(f"{symbol}: no available position to sell")
                 return None
             return self.alpaca.sell(symbol, qty), qty
 

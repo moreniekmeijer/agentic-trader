@@ -1,0 +1,46 @@
+{
+  "name": "agentic-trader",
+  "version": "0.1.0",
+  "description": "Agentic trading system with Alpaca — manifest for AI agents (no secrets)",
+  "entry_points": {
+    "api": "agentic_trader/api/app.py",
+    "main_smoke": "agentic_trader/main.py"
+  },
+  "directories": {
+    "agents": "agentic_trader/agents",
+    "market_data_providers": "agentic_trader/services/market_data/providers",
+    "fundamentals_providers": "agentic_trader/services/fundamentals/providers",
+    "services": "agentic_trader/services",
+    "database": "agentic_trader/database",
+    "controllers": "agentic_trader/controller"
+  },
+  "important_files": {
+    "agent_model": "agentic_trader/agents/models.py",
+    "base_agent": "agentic_trader/agents/agent.py",
+    "decision_engine": "agentic_trader/decision/engine.py",
+    "risk_engine": "agentic_trader/risk/engine.py",
+    "alpaca_controller": "agentic_trader/controller/alpaca_controller.py",
+    "db_mapper": "agentic_trader/database/mapper.py",
+    "db_repository": "agentic_trader/database/repository.py",
+    "db_session": "agentic_trader/database/session.py",
+    "market_data_engine": "agentic_trader/services/market_data/market_data_engine.py",
+    "fundamentals_engine": "agentic_trader/services/fundamentals/fundamentals_engine.py"
+  },
+  "env_variables": [
+    "DATABASE_URL",
+    "ALPACA_API_KEY",
+    "ALPACA_SECRET_KEY",
+    "PYTHONPATH"
+  ],
+  "run_commands": [
+    "python -m venv .venv",
+    "source .venv/bin/activate",
+    "pip install -e .[dev]",
+    "uvicorn agentic_trader.api.app:app --reload",
+    "python agentic_trader/main.py"
+  ],
+  "test_commands": [
+    "pytest"
+  ],
+  "notes": "This file intentionally contains NO secrets or .env values. Agents should not attempt to run commands that execute trades without manual approval. Use providers under services/*/providers and mapper/repository helpers for DB interactions."
+}

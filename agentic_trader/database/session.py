@@ -14,9 +14,9 @@ from sqlalchemy.orm import sessionmaker
 
 from agentic_trader.database.models import Base
 
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE"))
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(
     DATABASE_URL,

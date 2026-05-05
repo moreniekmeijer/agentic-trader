@@ -1,8 +1,11 @@
 import os
+from datetime import datetime
 
+import requests
+from alpaca.broker import GetAccountActivitiesRequest
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import ActivityType, OrderSide, OrderStatus, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
 
 
 class AlpacaController:
@@ -31,6 +34,45 @@ class AlpacaController:
         except Exception as e:
             print(f"Error fetching positions: {e}")
             return 0.0
+
+    def get_available_qty(self, symbol: str) -> float:
+        try:
+            positions = self.get_positions()
+            for pos in positions:
+                if pos.symbol == symbol:
+                    return float(pos.qty_available)
+            return 0.0
+        except Exception as e:
+            print(f"Error fetching available qty: {e}")
+            return 0.0
+
+    def has_open_orders(self, symbol: str) -> bool:
+        try:
+            orders = self.get_orders()
+            for order in orders:
+                # Use string comparison to be safe across different Enum types
+                status = str(order.status).lower()
+                if order.symbol == symbol and status in ["open", "held", "new", "partially_filled"]:
+                    return True
+            return False
+        except Exception as e:
+            print(f"Error checking open orders: {e}")
+            return False
+
+    def get_fill_activities(self) -> list:
+        """Haalt FILL activiteiten op via Alpaca REST API."""
+        try:
+            url = "https://paper-api.alpaca.markets/v2/account/activities/FILL"
+            headers = {
+                "APCA-API-KEY-ID": self.api_key,
+                "APCA-API-SECRET-KEY": self.secret_key,
+            }
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Could not fetch Alpaca activities: {e}")
+            return []
 
     def get_orders(self):
         return self.client.get_orders()
