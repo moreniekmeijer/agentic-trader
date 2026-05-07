@@ -14,6 +14,7 @@ from agentic_trader.database.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -21,6 +22,7 @@ def utcnow() -> datetime:
 # ---------------------------------------------------------------------------
 # WATCHLIST
 # ---------------------------------------------------------------------------
+
 
 def to_watchlist_entry(
     *,
@@ -44,6 +46,7 @@ def to_watchlist_entry(
 # ---------------------------------------------------------------------------
 # DECISIONS + VOTES
 # ---------------------------------------------------------------------------
+
 
 def to_decision(
     *,
@@ -86,6 +89,7 @@ def to_agent_vote(
 # TRADE
 # ---------------------------------------------------------------------------
 
+
 def extract_price(order: Any) -> float | None:
     """Extraheer de prijs uit een Alpaca order object."""
     return (
@@ -100,6 +104,10 @@ def extract_order_id(order: Any) -> str:
     return str(getattr(order, "id", ""))
 
 
+def extract_symbol(order: Any, fallback_symbol: str) -> str:
+    return str(getattr(order, "symbol", fallback_symbol))
+
+
 def to_trade(
     *,
     symbol: str,
@@ -111,7 +119,7 @@ def to_trade(
     price = extract_price(order)
 
     return Trade(
-        symbol=symbol.upper(),
+        symbol=extract_symbol(order, symbol).upper(),
         side=side,
         qty=qty,
         price=price,
@@ -123,6 +131,7 @@ def to_trade(
 # ---------------------------------------------------------------------------
 # UPDATE HELPERS (mutations)
 # ---------------------------------------------------------------------------
+
 
 def mark_decision_blocked(decision: Decision, reason: str) -> None:
     decision.blocked_reason = reason

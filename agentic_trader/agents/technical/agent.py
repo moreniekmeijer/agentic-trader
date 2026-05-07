@@ -10,6 +10,10 @@ Signal = Literal["BUY", "SELL", "HOLD"]
 
 
 class TechnicalAgent(BaseAgent):
+    def score_long_setup(self, data: MultiTimeframeSnapshot) -> tuple[float, list[str]]:
+        score_buy, _score_sell, reasons_buy, _reasons_sell = self._compute_scores(data)
+        return self._clamp(score_buy), reasons_buy or ["No long setup signal"]
+
     def _compute_scores(self, data: MultiTimeframeSnapshot):
         daily = data.daily
         h4 = data.h4

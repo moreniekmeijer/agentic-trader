@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from agentic_trader.agents.models import AggregatedResponse
-from agentic_trader.database.models import AgentVote, Decision, Trade, WatchlistEntry
+from agentic_trader.database.models import AgentVote, Decision, Trade, WatchlistEntry, WorkerHeartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +130,22 @@ class WatchlistRepository:
             entry.deactivation_reason = reason
             self.session.commit()
             logger.info(f"Watchlist: deactivated {symbol} — {reason}")
+
+
+class SystemRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def update_heartbeat(self, symbols: list[str]) -> WorkerHeartbeat:
+        heartbeat = self.get_last_heartbeat()
+        if heartbeat is None:
+            heartbeat = WorkerHeartbeat(id=1)
+            self.session.add(heartbeat)
+
+        heartbeat.last_seen = datetime.now(timezone.utc)
+        heartbeat.active_symbols = sorted(set(symbols))
+        self.session.flush()
+        return heartbeat
+
+    def get_last_heartbeat(self) -> WorkerHeartbeat | None:
+        return self.session.get(WorkerHeartbeat, 1)

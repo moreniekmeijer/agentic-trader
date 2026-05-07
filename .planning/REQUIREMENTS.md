@@ -13,10 +13,10 @@
 
 ### Advanced Multi-Stage Scanner (SCAN)
 
-- [ ] **SCAN-01**: Implement a multi-stage funnel: Fundamentals Filter → Technical Setup → Sentiment/Event Check.
-- [ ] **SCAN-02**: Specialized agent for weekly fundamental quality screening (Quality Universe).
-- [ ] **SCAN-03**: Specialized agent for daily technical timing on the Quality Universe (Active Shortlist).
-- [ ] **SCAN-04**: Specialized agent for real-time news/sentiment analysis on shortlist candidates.
+- [x] **SCAN-01**: Implement a multi-stage funnel: Fundamentals Filter → Technical Setup → Sentiment/Event Check.
+- [x] **SCAN-02**: Specialized agent for weekly fundamental quality screening (Quality Universe).
+- [x] **SCAN-03**: Specialized agent for daily technical timing on the Quality Universe (Active Shortlist).
+- [x] **SCAN-04**: Specialized agent for real-time news/sentiment analysis on shortlist candidates.
 
 ### Execution & Mix Sell Logic (EXEC)
 
@@ -56,10 +56,10 @@
 | RELI-01 | Phase 1 | Pending |
 | RELI-02 | Phase 1 | Pending |
 | RELI-03 | Phase 1 | Pending |
-| SCAN-01 | Phase 2 | Pending |
-| SCAN-02 | Phase 2 | Pending |
-| SCAN-03 | Phase 2 | Pending |
-| SCAN-04 | Phase 2 | Pending |
+| SCAN-01 | Phase 2 | Complete |
+| SCAN-02 | Phase 2 | Complete |
+| SCAN-03 | Phase 2 | Complete |
+| SCAN-04 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 3 | Pending |
 | EXEC-03 | Phase 3 | Pending |
@@ -74,4 +74,4 @@
 
 ---
 *Requirements defined: 2026-05-05*
-*Last updated: 2026-05-05 after research synthesis*
+*Last updated: 2026-05-07 after Phase 2 security verification*

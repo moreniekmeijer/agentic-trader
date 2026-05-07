@@ -1,22 +1,19 @@
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 
 from agentic_trader.api.schemas import (
     AgentVoteResponse,
     DecisionResponse,
     TradeResponse,
-    WatchlistCreate,
-    WatchlistResponse,
-    AgentPerformanceResponse,
 )
 from agentic_trader.config.logging import setup_logging
-from agentic_trader.database.models import Decision, Trade, WatchlistEntry
-from agentic_trader.database.repository import WatchlistRepository
-from agentic_trader.database.session import SessionLocal, create_tables, drop_tables
-from fastapi.middleware.cors import CORSMiddleware
+from agentic_trader.database.models import Decision, Trade
+from agentic_trader.database.session import SessionLocal, create_tables
 
 
 @asynccontextmanager
@@ -82,7 +79,7 @@ def get_db():
 #         .order_by(WatchlistEntry.added_at.desc())
 #         .all()
 #     )
-# 
+#
 #     return [
 #         WatchlistResponse(
 #             id=e.id,
@@ -96,12 +93,12 @@ def get_db():
 #         )
 #         for e in entries
 #     ]
-# 
-# 
+#
+#
 # @app.post("/watchlist", response_model=WatchlistResponse)
 # def add_to_watchlist(data: WatchlistCreate, session: Session = Depends(get_db)):
 #     repo = WatchlistRepository(session)
-# 
+#
 #     entry = repo.add(
 #         symbol=data.symbol.upper(),
 #         added_by=data.added_by or "manual",
@@ -110,7 +107,7 @@ def get_db():
 #         horizon=data.horizon or "medium",
 #         review_after=data.review_after,
 #     )
-# 
+#
 #     return WatchlistResponse(
 #         id=entry.id,
 #         symbol=entry.symbol,
@@ -121,19 +118,19 @@ def get_db():
 #         horizon=entry.horizon,
 #         review_after=entry.review_after if entry.review_after else None,
 #     )
-# 
-# 
+#
+#
 # @app.delete("/watchlist/{symbol}")
 # def remove_from_watchlist(symbol: str, session: Session = Depends(get_db)):
 #     repo = WatchlistRepository(session)
-# 
+#
 #     before = repo.active_symbols()
 #     repo.deactivate(symbol=symbol.upper(), reason="manual removal")
 #     after = repo.active_symbols()
-# 
+#
 #     if symbol.upper() in before and symbol.upper() not in after:
 #         return {"status": "deactivated", "symbol": symbol.upper()}
-# 
+#
 #     raise HTTPException(status_code=404, detail="Symbol not found")
 
 

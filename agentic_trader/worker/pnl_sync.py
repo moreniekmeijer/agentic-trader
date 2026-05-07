@@ -52,28 +52,24 @@ class PnlSyncJob:
             logger.info(f"PnL sync complete — {settled}/{len(open_trades)} settled")
 
     def _unsettled_trades(self, session: Session) -> list[Trade]:
-        stmt = (
-            select(Trade)
-            .where(Trade.pnl.is_(None))
-            .where(Trade.alpaca_order_id.isnot(None))
-        )
+        stmt = select(Trade).where(Trade.pnl.is_(None)).where(Trade.alpaca_order_id.isnot(None))
         return list(session.scalars(stmt).all())
 
     def _fetch_activities(self) -> list:
         activities = self.alpaca.get_fill_activities()
         if activities:
             logger.debug(f"Activity sample: {activities[0]}")
-        return self.alpaca.get_fill_activities()
+        return activities
 
-    def _index_by_order(self, activities: list) -> dict[str, float]:
+    def _index_by_order(self, activities: list[dict]) -> dict[str, float]:
         """
         Bouwt een map van order_id → realized_pl.
         Alpaca vult realized_pl alleen in bij sluitende trades (SELL na BUY).
         """
         result = {}
         for activity in activities:
-            order_id = getattr(activity, "order_id", None)
-            realized_pl = getattr(activity, "realized_pl", None)
+            order_id = activity.get("order_id")
+            realized_pl = activity.get("realized_pl")
 
             if order_id and realized_pl is not None:
                 result[str(order_id)] = float(realized_pl)

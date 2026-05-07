@@ -4,7 +4,10 @@ from agentic_trader.services.market_data.response import MarketDataSnapshot, Rsi
 
 
 class FeatureBuilder:
-    def build(self, df: pd.DataFrame, symbol: str):
+    def build(self, df: pd.DataFrame, symbol: str) -> MarketDataSnapshot:
+        if len(df) < 2:
+            raise ValueError(f"{symbol}: insufficient market data ({len(df)} rows)")
+
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 

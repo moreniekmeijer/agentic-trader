@@ -6,8 +6,8 @@ The journey from a basic trading script to a fully automated, self-learning agen
 
 ## Phases
 
-- [ ] **Phase 1: Reliability & Infrastructure** — Stabilize worker execution and trade synchronization.
-- [ ] **Phase 2: Multi-Stage Scanner** — Implement the agentic scanning funnel (Fundamentals/Technicals/Sentiment).
+- [x] **Phase 1: Reliability & Infrastructure** — Stabilize worker execution and trade synchronization.
+- [x] **Phase 2: Multi-Stage Scanner** — Implement the agentic scanning funnel (Fundamentals/Technicals/Sentiment).
 - [ ] **Phase 3: Agentic Execution (Mix Sell)** — Coordinate Alpaca bracket orders with agentic profit targets.
 - [ ] **Phase 4: Attribution & Learning** — Close the loop with signal snapshotting and Bayesian weight updates.
 
@@ -24,22 +24,28 @@ The journey from a basic trading script to a fully automated, self-learning agen
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Stabilize worker execution loop and recovery logic.
-- [ ] 01-02: Implement robust Alpaca fill/position synchronization.
+- [x] 01-01: Stabilize worker execution loop and recovery logic.
+- [x] 01-02: Implement robust Alpaca fill/position synchronization.
 
 ### Phase 2: Multi-Stage Scanner
-**Goal**: Replace the hardcoded scanner with a dynamic, agent-driven funnel.
+**Goal**: Replace the hardcoded scanner with a staged discovery funnel that preserves rich candidate context for deterministic trade execution.
 **Depends on**: Phase 1
 **Requirements**: SCAN-01, SCAN-02, SCAN-03, SCAN-04
+**Architecture Notes**:
+  1. Providers/services fetch and compute facts; they remain swappable so `yfinance` can be replaced or supplemented later.
+  2. Evaluators/agents turn facts into judgment-shaped outputs with confidence and reasons.
+  3. Scanner stages produce enriched `CandidateContext` outputs, not just symbols or compressed votes.
+  4. The trade job consumes enriched candidates and stays mostly deterministic: risk checks, final synthesis, order execution, and persistence.
 **Success Criteria**:
   1. System generates a weekly "Quality Universe" based on fundamentals.
   2. System generates a daily "Active Shortlist" based on technical timing.
   3. Sentiment agent re-evaluates shortlist candidates before discussion.
+  4. Scanner outputs preserve timing, fundamentals, sentiment, scores, reasons, and freshness context for later attribution.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: Implement Fundamental and Technical scanner agents.
-- [ ] 02-02: Integrate News/Sentiment agent into the scanning funnel.
+- [x] 02-01: Implement Quality Universe, long-only shortlist, and `CandidateContext`.
+- [x] 02-02: Integrate sentiment soft input and scanner-oriented worker flow.
 
 ### Phase 3: Agentic Execution (Mix Sell)
 **Goal**: Combine automated bracket orders with subjective agentic profit taking.
@@ -72,11 +78,11 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Reliability | 0/2 | Not started | - |
-| 2. Scanner | 0/2 | Not started | - |
+| 1. Reliability | 2/2 | Complete | 2026-05-07 |
+| 2. Scanner | 2/2 | Complete | 2026-05-07 |
 | 3. Execution | 0/2 | Not started | - |
 | 4. Learning | 0/2 | Not started | - |
 
 ---
 *Roadmap defined: 2026-05-05*
-*Last updated: 2026-05-05 after requirements definition*
+*Last updated: 2026-05-07 after Phase 2 security verification*

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -140,12 +141,22 @@ class Trade(Base):
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
 
     # Ingevuld bij sluiting
-    # closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    # close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    # pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     decision_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("decisions.id"), nullable=True, index=True
     )
     decision: Mapped[Optional[Decision]] = relationship("Decision", back_populates="trade")
+
+
+class WorkerHeartbeat(Base):
+    """Persists minimal worker runtime state for restart recovery."""
+
+    __tablename__ = "worker_heartbeat"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    active_symbols: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)

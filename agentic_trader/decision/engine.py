@@ -42,7 +42,7 @@ class DecisionEngine:
             self.session.commit()
             return
 
-        result = self._execute_trade(response)
+        result = self._execute_trade(response, client_order_id=str(decision.id))
 
         if not result:
             logger.info(f"{response.symbol}: no trade executed")
@@ -57,7 +57,7 @@ class DecisionEngine:
     # TRADE EXECUTION (pure orchestration)
     # -----------------------------------------------------------------------
 
-    def _execute_trade(self, response: AggregatedResponse):
+    def _execute_trade(self, response: AggregatedResponse, client_order_id: str):
         symbol = response.symbol
 
         # Check for open orders first to avoid "insufficient qty" errors
@@ -70,14 +70,22 @@ class DecisionEngine:
             if qty <= 0:
                 logger.info(f"{symbol}: no qty allowed")
                 return None
-            return self.alpaca.buy(symbol, qty), qty
+            order = self.alpaca.buy(symbol, qty, client_order_id=client_order_id)
+            if order is None:
+                logger.info(f"{symbol}: no tradable Alpaca symbol found")
+                return None
+            return order, qty
 
         if response.signal == "SELL":
             qty = self.alpaca.get_available_qty(symbol)
             if qty <= 0:
                 logger.info(f"{symbol}: no available position to sell")
                 return None
-            return self.alpaca.sell(symbol, qty), qty
+            order = self.alpaca.sell(symbol, qty, client_order_id=client_order_id)
+            if order is None:
+                logger.info(f"{symbol}: no tradable Alpaca symbol found")
+                return None
+            return order, qty
 
         return None
 
@@ -99,6 +107,4 @@ class DecisionEngine:
 
         self.session.commit()
 
-        logger.info(
-            f"Trade saved: {response.signal} {trade.qty} {response.symbol} @ {trade.price}"
-        )
+        logger.info(f"Trade saved: {response.signal} {trade.qty} {response.symbol} @ {trade.price}")

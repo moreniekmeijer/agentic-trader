@@ -21,6 +21,12 @@ assert abs(sum(_WEIGHTS.values()) - 1.0) < 1e-9, "Weights must sum to 1.0"
 
 
 class FundamentalsAgent(BaseAgent):
+    def score_quality(self, data: FundamentalsSnapshot) -> tuple[float, list[str]]:
+        score_buy, score_sell, reasons_buy, reasons_sell = self._compute_scores(data)
+        score = self._clamp(score_buy - score_sell)
+        reasons = reasons_buy if score > 0 else reasons_sell
+        return score, reasons or ["No quality advantage"]
+
     def _score_relative(
         self,
         value: float,

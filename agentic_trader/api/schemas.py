@@ -60,7 +60,7 @@ class TradeResponse(BaseModel):
     timestamp: datetime
     side: str
     qty: float
-    price: float
+    price: float | None
     alpaca_order_id: str | None
     closed_at: datetime | None
     close_price: float | None
