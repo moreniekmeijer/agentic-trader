@@ -23,6 +23,7 @@ class FeatureBuilder:
         close = safe("close")
         volume = safe("volume")
         volume_avg = safe("volume_avg")
+        atr = safe("atr")
 
         trend: Trend | None = None
         if ma_50 and close:
@@ -45,4 +46,5 @@ class FeatureBuilder:
             volume=volume,
             volume_avg=volume_avg,
             volume_spike=(volume > volume_avg) if volume and volume_avg else None,
+            atr=atr,
         )

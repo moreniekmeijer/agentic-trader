@@ -17,3 +17,17 @@ def test_build_raises_for_single_row_dataframe():
 
     with pytest.raises(ValueError, match="insufficient market data"):
         builder.build(df, "GOOGL")
+
+
+def test_build_includes_atr_when_available():
+    builder = FeatureBuilder()
+    df = pd.DataFrame(
+        [
+            {"close": 100.0, "atr": 1.0},
+            {"close": 102.0, "atr": 2.5},
+        ]
+    )
+
+    snapshot = builder.build(df, "GOOGL")
+
+    assert snapshot.atr == 2.5

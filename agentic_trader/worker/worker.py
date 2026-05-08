@@ -16,6 +16,7 @@ from agentic_trader.config.logging import setup_logging
 from agentic_trader.controller.alpaca_controller import AlpacaController
 from agentic_trader.data import sp500_symbols
 from agentic_trader.database.session import get_session
+from agentic_trader.decision.bracket_policy import BracketPolicy
 from agentic_trader.decision.engine import DecisionEngine
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
@@ -23,6 +24,7 @@ from agentic_trader.scanner.models import CandidateContext
 from agentic_trader.services.fundamentals.fundamentals_engine import FundamentalsEngine
 from agentic_trader.services.fundamentals.providers.yahoo_finance import YahooFundamentalsProvider
 from agentic_trader.services.market_data.feature_builder import FeatureBuilder
+from agentic_trader.services.market_data.indicators.atr import AverageTrueRangeIndicator
 from agentic_trader.services.market_data.indicators.ma import MovingAverageIndicator
 from agentic_trader.services.market_data.indicators.rsi import RSIIndicator
 from agentic_trader.services.market_data.indicators.volume import VolumeIndicator
@@ -34,6 +36,7 @@ from agentic_trader.services.sentiment.providers.null import NullSentimentProvid
 from agentic_trader.services.sentiment.sentiment_engine import SentimentEngine
 from agentic_trader.worker.models import CACHE_MAX_AGE, TimeframeData
 from agentic_trader.worker.pnl_sync import PnlSyncJob
+from agentic_trader.worker.position_review import PositionReviewJob, TechnicalExitReviewer
 from agentic_trader.worker.reconciliation import ReconciliationJob
 from agentic_trader.worker.scan_state import WorkerState
 
@@ -78,6 +81,7 @@ FUNDAMENTALS_INTERVAL = _env_int("FUNDAMENTALS_INTERVAL", 7 * 24 * 60, min_value
 SENTIMENT_INTERVAL = _env_int("SENTIMENT_INTERVAL", 60, min_value=1)  # minutes
 PNL_SYNC_INTERVAL = _env_int("PNL_SYNC_INTERVAL", 5, min_value=1)  # minutes
 RECONCILIATION_INTERVAL = _env_int("RECONCILIATION_INTERVAL", 10, min_value=1)  # minutes
+POSITION_REVIEW_INTERVAL = _env_int("POSITION_REVIEW_INTERVAL", 60, min_value=1)  # minutes
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -99,9 +103,16 @@ def build_scan_pipeline():
 
 
 def build_trade_pipeline() -> MultiTimeframeEngine:
-    """Full pipeline: RSI + MA50 + Volume."""
+    """Full pipeline: RSI + MA50 + Volume + ATR."""
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()])
+    engine = MarketDataEngine(
+        indicators=[
+            RSIIndicator(),
+            MovingAverageIndicator(50),
+            VolumeIndicator(),
+            AverageTrueRangeIndicator(),
+        ]
+    )
     features = FeatureBuilder()
     return MultiTimeframeEngine(provider, engine, features)
 
@@ -126,6 +137,10 @@ def build_discussion_agent() -> DiscussionAgent:
             "sentiment": 0.1,
         }
     )
+
+
+def build_position_reviewer() -> TechnicalExitReviewer:
+    return TechnicalExitReviewer(build_trade_pipeline())
 
 
 def _source_symbols() -> list[str]:
@@ -341,11 +356,11 @@ def _trade_symbol(
         return
 
     votes = _dedupe_responses(candidate.evaluator_responses) if candidate is not None else []
+    mtf_snapshot = candidate.market if candidate is not None else None
 
     # Candidate context is the preferred path. Fallbacks keep the worker
     # resilient if it resumes from only heartbeat symbols after a restart.
     if not _has_response(votes, "technical"):
-        mtf_snapshot = candidate.market if candidate is not None else None
         if mtf_snapshot is None:
             mtf_snapshot = multi_engine.compute_from_cache(
                 symbol=symbol,
@@ -383,7 +398,21 @@ def _trade_symbol(
     aggregated = discussion_engine.discuss(symbol=symbol, responses=votes)
 
     # --- Decision + Risk + Execute ---
-    decision_engine.execute_decision(aggregated)
+    bracket_levels = None
+    if aggregated.signal == "BUY":
+        if mtf_snapshot is None:
+            mtf_snapshot = multi_engine.compute_from_cache(
+                symbol=symbol,
+                df_daily=cached.daily,
+                df_4h=cached.h4,
+            )
+        try:
+            bracket_levels = BracketPolicy().from_snapshot(mtf_snapshot)
+        except ValueError as exc:
+            logger.warning(f"{symbol}: cannot build bracket levels, skipping BUY execution: {exc}")
+            return
+
+    decision_engine.execute_decision(aggregated, bracket_levels=bracket_levels)
 
 
 # ---------------------------------------------------------------------------
@@ -406,12 +435,14 @@ if __name__ == "__main__":
     trade_job()
     pnl_sync = PnlSyncJob(AlpacaController())
     reconciliation = ReconciliationJob(AlpacaController())
+    position_review = PositionReviewJob(AlpacaController(), reviewer=build_position_reviewer())
 
     scheduler = BlockingScheduler()
     scheduler.add_job(quality_universe_job, "interval", minutes=FUNDAMENTALS_INTERVAL)
     scheduler.add_job(scan_job, "interval", minutes=SCAN_INTERVAL)
     scheduler.add_job(sentiment_job, "interval", minutes=SENTIMENT_INTERVAL)
     scheduler.add_job(trade_job, "interval", minutes=TRADE_INTERVAL)
+    scheduler.add_job(position_review.run, "interval", minutes=POSITION_REVIEW_INTERVAL)
     scheduler.add_job(pnl_sync.run, "interval", minutes=PNL_SYNC_INTERVAL)
     scheduler.add_job(reconciliation.run, "interval", minutes=RECONCILIATION_INTERVAL)
     scheduler.start()

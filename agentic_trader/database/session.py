@@ -4,7 +4,7 @@ import os
 from contextlib import contextmanager
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -52,7 +52,25 @@ def get_session():
 
 def create_tables() -> None:
     """Aanmaken van alle tabellen (gebruik Alembic voor productie-migraties)."""
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    _ensure_trade_bracket_columns(engine)
+
+
+def _ensure_trade_bracket_columns(engine: Engine) -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    statements = [
+        "ALTER TABLE trades ADD COLUMN IF NOT EXISTS take_profit_order_id VARCHAR(100)",
+        "ALTER TABLE trades ADD COLUMN IF NOT EXISTS stop_loss_order_id VARCHAR(100)",
+        "ALTER TABLE trades ADD COLUMN IF NOT EXISTS take_profit_price DOUBLE PRECISION",
+        "ALTER TABLE trades ADD COLUMN IF NOT EXISTS stop_loss_price DOUBLE PRECISION",
+    ]
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def drop_tables() -> None:

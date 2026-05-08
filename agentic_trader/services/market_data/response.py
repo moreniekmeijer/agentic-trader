@@ -10,7 +10,6 @@ class MarketDataSnapshot(BaseModel):
     symbol: str
 
     price: float | None
-
     rsi: float | None
     rsi_prev: float | None
     rsi_trend: RsiTrend | None
@@ -24,6 +23,7 @@ class MarketDataSnapshot(BaseModel):
     volume: float | None
     volume_avg: float | None
     volume_spike: bool | None
+    atr: float | None = None
 
 
 class MultiTimeframeSnapshot(BaseModel):

@@ -139,6 +139,10 @@ class Trade(Base):
     price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    take_profit_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    stop_loss_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    take_profit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    stop_loss_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Ingevuld bij sluiting
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -150,6 +154,33 @@ class Trade(Base):
         Integer, ForeignKey("decisions.id"), nullable=True, index=True
     )
     decision: Mapped[Optional[Decision]] = relationship("Decision", back_populates="trade")
+    bracket_events: Mapped[list[BracketOrderEvent]] = relationship(
+        "BracketOrderEvent", back_populates="trade"
+    )
+
+
+class BracketOrderEvent(Base):
+    """Audit trail for bracket child-leg creation and replacement."""
+
+    __tablename__ = "bracket_order_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    alpaca_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    take_profit_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    stop_loss_order_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    old_take_profit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    new_take_profit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    old_stop_loss_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    new_stop_loss_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    raw_response: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    trade: Mapped[Trade] = relationship("Trade", back_populates="bracket_events")
 
 
 class WorkerHeartbeat(Base):

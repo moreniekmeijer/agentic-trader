@@ -174,6 +174,7 @@ def test_trade_symbol_consumes_candidate_votes_without_recomputing_market(monkey
     candidate = _candidate("AAPL").model_copy(
         update={
             "stage": "sentiment_enriched",
+            "market": _market("AAPL", long_setup=True),
             "evaluator_responses": [
                 AgentResponse(
                     symbol="AAPL",
@@ -209,9 +210,11 @@ def test_trade_symbol_consumes_candidate_votes_without_recomputing_market(monkey
     class CapturingDecisionEngine:
         def __init__(self):
             self.response = None
+            self.bracket_levels = None
 
-        def execute_decision(self, response):
+        def execute_decision(self, response, bracket_levels=None):
             self.response = response
+            self.bracket_levels = bracket_levels
 
     decision_engine = CapturingDecisionEngine()
 
@@ -228,3 +231,4 @@ def test_trade_symbol_consumes_candidate_votes_without_recomputing_market(monkey
         "fundamentals",
         "sentiment",
     }
+    assert decision_engine.bracket_levels is not None

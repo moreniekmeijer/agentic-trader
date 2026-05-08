@@ -4,8 +4,15 @@ import os
 import requests
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import (
+    GetOrderByIdRequest,
+    GetOrdersRequest,
+    MarketOrderRequest,
+    ReplaceOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +91,7 @@ class AlpacaController:
 
     def has_open_orders(self, symbol: str) -> bool:
         try:
-            orders = self.get_orders()
+            orders = self.get_orders(status=QueryOrderStatus.OPEN)
             candidates = set(self._candidate_symbols(symbol))
             for order in orders:
                 # Use string comparison to be safe across different Enum types
@@ -111,8 +118,12 @@ class AlpacaController:
             print(f"Could not fetch Alpaca activities: {e}")
             return []
 
-    def get_orders(self):
-        return self.client.get_orders()
+    def get_orders(self, status: QueryOrderStatus | None = None):
+        request = GetOrdersRequest(status=status) if status is not None else None
+        return self.client.get_orders(filter=request)
+
+    def get_order(self, order_id: str, *, nested: bool = False):
+        return self.client.get_order_by_id(order_id, filter=GetOrderByIdRequest(nested=nested))
 
     def place_market_order(
         self,
@@ -147,3 +158,87 @@ class AlpacaController:
 
     def sell(self, symbol: str, qty: float, client_order_id: str | None = None):
         return self.place_market_order(symbol, qty, "sell", client_order_id=client_order_id)
+
+    def place_bracket_order(
+        self,
+        symbol: str,
+        qty: float,
+        side: str,
+        take_profit_price: float,
+        stop_loss_price: float,
+        client_order_id: str | None = None,
+    ):
+        tradable_symbol = self.resolve_tradable_symbol(symbol)
+        if tradable_symbol is None:
+            logger.warning(f"{symbol}: not tradable through Alpaca, skipping bracket order submission")
+            return None
+
+        try:
+            order = MarketOrderRequest(
+                symbol=tradable_symbol,
+                qty=qty,
+                side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                time_in_force=TimeInForce.DAY,
+                client_order_id=client_order_id,
+                order_class=OrderClass.BRACKET,
+                take_profit=TakeProfitRequest(limit_price=take_profit_price),
+                stop_loss=StopLossRequest(stop_price=stop_loss_price),
+            )
+
+            return self.client.submit_order(order)
+        except Exception as e:
+            print(f"[ERROR] Bracket order failed: {e}")
+            raise
+
+    def buy_bracket(
+        self,
+        symbol: str,
+        qty: float,
+        take_profit_price: float,
+        stop_loss_price: float,
+        client_order_id: str | None = None,
+    ):
+        return self.place_bracket_order(
+            symbol,
+            qty,
+            "buy",
+            take_profit_price,
+            stop_loss_price,
+            client_order_id=client_order_id,
+        )
+
+    def replace_order(
+        self,
+        order_id: str,
+        *,
+        limit_price: float | None = None,
+        stop_price: float | None = None,
+        client_order_id: str | None = None,
+    ):
+        request = ReplaceOrderRequest(
+            limit_price=limit_price,
+            stop_price=stop_price,
+            client_order_id=client_order_id,
+        )
+        try:
+            return self.client.replace_order_by_id(order_id, order_data=request)
+        except Exception:
+            logger.error(f"{order_id}: failed to replace Alpaca order", exc_info=True)
+            raise
+
+    def extract_bracket_leg_ids(self, order) -> tuple[str | None, str | None]:
+        take_profit_order_id = None
+        stop_loss_order_id = None
+
+        for leg in getattr(order, "legs", None) or []:
+            order_type = str(getattr(leg, "type", "")).lower()
+            order_id = getattr(leg, "id", None)
+            if order_id is None:
+                continue
+
+            if order_type == "limit" or "limit" in order_type:
+                take_profit_order_id = str(order_id)
+            elif "stop" in order_type:
+                stop_loss_order_id = str(order_id)
+
+        return take_profit_order_id, stop_loss_order_id

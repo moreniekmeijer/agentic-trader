@@ -115,6 +115,10 @@ def to_trade(
     qty: float,
     order: Any,
     decision_id: int,
+    take_profit_order_id: str | None = None,
+    stop_loss_order_id: str | None = None,
+    take_profit_price: float | None = None,
+    stop_loss_price: float | None = None,
 ) -> Trade:
     price = extract_price(order)
 
@@ -124,6 +128,10 @@ def to_trade(
         qty=qty,
         price=price,
         alpaca_order_id=extract_order_id(order),
+        take_profit_order_id=take_profit_order_id,
+        stop_loss_order_id=stop_loss_order_id,
+        take_profit_price=take_profit_price,
+        stop_loss_price=stop_loss_price,
         decision_id=decision_id,
     )
 
