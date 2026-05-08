@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Literal, cast
 
@@ -26,7 +27,10 @@ class FakeSession:
 
 class FakeRepo:
     def __init__(self):
-        self.decision = SimpleNamespace(id=42)
+        self.decision = SimpleNamespace(
+            id=42,
+            timestamp=datetime(2026, 5, 8, 13, 20, 32, 123456, tzinfo=timezone.utc),
+        )
         self.bracket_events = []
 
     def save_decision(self, _response):
@@ -120,14 +124,15 @@ def _bracket_levels() -> BracketLevels:
     )
 
 
-def test_execute_decision_uses_decision_id_as_client_order_id():
+def test_execute_decision_uses_traceable_unique_client_order_id():
     alpaca = FakeAlpaca()
     session = cast(Session, FakeSession())
     engine = DecisionEngine(alpaca, FakeRisk(), session)
     engine.repo = FakeRepo()
     engine.execute_decision(_response("BUY"), bracket_levels=_bracket_levels())
 
-    assert alpaca.last_client_order_id == "42"
+    assert alpaca.last_client_order_id == "at-AAPL-42-20260508132032123456"
+    assert len(alpaca.last_client_order_id) <= 48
 
 
 def test_buy_decision_uses_bracket_order():

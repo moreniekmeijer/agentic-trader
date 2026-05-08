@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-05-05)
 
 **Core value:** A fully automated agentic trading system that learns from historical outcomes through attribution and signal snapshotting.
-**Current focus:** Phase 3 verification: Agentic Execution (Mix Sell)
+**Current focus:** Phase 4: Attribution & Learning
 
 ## Current Position
 
 Phase: 3 of 4 (Agentic Execution)
 Plan: 2 of 2 executed in current phase
-Status: Phase 3 implemented, ready for UAT verification
-Last activity: 2026-05-08 - Phase 3 bracket execution and position review implemented
+Status: Phase 3 complete; ready to discuss Phase 4
+Last activity: 2026-05-08 - Phase 3 UAT completed
 
-Progress: [████████░░] 75%
+Progress: [████████░] 75%
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [████████░░] 75%
 |-------|-------|-------|----------|
 | 1. Reliability | 2 | 2 | Complete |
 | 2. Scanner | 2 | 2 | Complete |
-| 3. Execution | 2 | 2 | Ready for UAT |
+| 3. Execution | 2 | 2 | Complete |
 | 4. Learning | 0 | 2 | - |
 
 **Recent Trend:**
@@ -51,13 +51,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Run `/gsd-verify-work` for Phase 3.
-- Manually confirm Alpaca Paper bracket order creation and leg replacement behavior.
+- Start Phase 4 discussion with `/gsd-discuss-phase 4`.
 - Add formal DB migrations for existing schema-alignment helpers before production hardening.
 
 ### Blockers/Concerns
 
-- [Phase 3]: Manual Alpaca Paper UAT is still needed for real bracket child-leg IDs and replacements.
 - [Phase 1]: DB migration work is still outstanding as follow-up hardening.
 
 ## Deferred Items
@@ -71,5 +69,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-08
-Stopped at: Phase 03 implemented, ready for verification
-Resume file: .planning/phases/03-agentic-execution-mix-sell/03-02-SUMMARY.md
+Stopped at: Phase 03 verified complete
+Resume file: .planning/phases/03-agentic-execution-mix-sell/03-UAT.md

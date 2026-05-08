@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -50,7 +51,7 @@ class DecisionEngine:
 
         result = self._execute_trade(
             response,
-            client_order_id=str(decision.id),
+            client_order_id=self._build_client_order_id(decision, response),
             bracket_levels=bracket_levels,
         )
 
@@ -185,3 +186,16 @@ class DecisionEngine:
             take_profit_order_id or nested_take_profit_id,
             stop_loss_order_id or nested_stop_loss_id,
         )
+
+    def _build_client_order_id(self, decision, response: AggregatedResponse) -> str:
+        timestamp = getattr(decision, "timestamp", None)
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+        compact_timestamp = timestamp.astimezone(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+        symbol = "".join(ch for ch in response.symbol.upper() if ch.isalnum())[:8]
+        decision_id = str(decision.id)[-12:]
+
+        return f"at-{symbol}-{decision_id}-{compact_timestamp}"[:48]
