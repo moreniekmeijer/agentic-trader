@@ -57,8 +57,14 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Implement bracket order placement and leg tracking.
-- [ ] 03-02: Implement agentic re-evaluation and leg modification logic.
+- [ ] 03-01: Implement bracket order placement and leg tracking. *(Wave 1)*
+- [ ] 03-02: Implement agentic re-evaluation and leg modification logic. *(Wave 2; depends on 03-01)*
+
+**Cross-cutting constraints:**
+  1. Execution stays long-only; `SELL` closes/reduces existing long positions only.
+  2. Every accepted `BUY` entry must use an Alpaca bracket order with stop-loss and take-profit legs.
+  3. Agentic exit review may only de-risk: tighten stops, lower targets, or close/reduce.
+  4. Alpaca remains source of truth for active order and position state.
 
 ### Phase 4: Attribution & Learning
 **Goal**: Implement the self-learning loop by correlating signal states with P&L.
@@ -80,9 +86,9 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Reliability | 2/2 | Complete | 2026-05-07 |
 | 2. Scanner | 2/2 | Complete | 2026-05-07 |
-| 3. Execution | 0/2 | Not started | - |
+| 3. Execution | 0/2 | Planned | - |
 | 4. Learning | 0/2 | Not started | - |
 
 ---
 *Roadmap defined: 2026-05-05*
-*Last updated: 2026-05-07 after Phase 2 security verification*
+*Last updated: 2026-05-08 after Phase 3 planning*
