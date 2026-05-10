@@ -1,22 +1,19 @@
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 
 from agentic_trader.api.schemas import (
     AgentVoteResponse,
     DecisionResponse,
     TradeResponse,
-    WatchlistCreate,
-    WatchlistResponse,
-    AgentPerformanceResponse,
 )
 from agentic_trader.config.logging import setup_logging
-from agentic_trader.database.models import Decision, Trade, WatchlistEntry
-from agentic_trader.database.repository import WatchlistRepository
-from agentic_trader.database.session import SessionLocal, create_tables, drop_tables
-from fastapi.middleware.cors import CORSMiddleware
+from agentic_trader.database.models import Decision, Trade
+from agentic_trader.database.session import SessionLocal, create_tables
 
 
 @asynccontextmanager

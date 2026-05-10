@@ -11,6 +11,10 @@ class AgentResponse(BaseModel):
     confidence: float
     reasoning: list[str]
     agent: str = "aggregated"
+    entry_price: float | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
+    conviction: Literal["LOW", "MEDIUM", "HIGH"] | None = None
 
 
 class AgentVote(BaseModel):

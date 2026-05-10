@@ -65,7 +65,7 @@ run-worker:
 
 run-api:
 	@echo "Starting FastAPI server..."
-	uv run uvicorn agentic_trader.api.app:app --reload --port 8000
+	uv run uvicorn agentic_trader.api.app:app --reload --port 8004
 
 run-main:
 	@echo "Starting main app..."

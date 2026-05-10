@@ -11,13 +11,11 @@ class RiskEngine:
     def __init__(
         self,
         alpaca_controller,
-        max_position_size: int = 5,
-        max_total_positions: int = 10,
+        max_total_positions: int = 100,
         min_confidence: float = 0.3,
         cooldown_minutes: int = 10,
     ):
         self.alpaca = alpaca_controller
-        self.max_position_size = max_position_size
         self.max_total_positions = max_total_positions
         self.min_confidence = min_confidence
         self.cooldown = timedelta(minutes=cooldown_minutes)
@@ -47,9 +45,32 @@ class RiskEngine:
 
         return RiskVerdict(allowed=True)
 
-    def get_allowed_qty(self, symbol: str) -> int:
-        current_qty = self.alpaca.get_position(symbol)
-        return max(0, self.max_position_size - current_qty)
+    def get_allowed_qty(self, symbol: str, entry_price: float, stop_loss_price: float, conviction: str) -> float:
+        # Risk percentage based on conviction
+        risk_map = {"LOW": 0.005, "MEDIUM": 0.01, "HIGH": 0.02}
+        risk_pct = risk_map.get(conviction.upper(), 0.005)
+        
+        account = self.alpaca.get_account()
+        equity = float(account.equity)
+        
+        # Risk amount in dollars
+        risk_amount = equity * risk_pct
+        
+        # Risk per share
+        risk_per_share = abs(entry_price - stop_loss_price)
+        if risk_per_share <= 0:
+            logger.warning(f"Invalid bracket targets for {symbol}. Entry: {entry_price}, SL: {stop_loss_price}")
+            return 0.0
+            
+        qty = int(risk_amount / risk_per_share)
+        
+        # Cap by buying power
+        buying_power = float(account.buying_power)
+        if entry_price > 0:
+            max_qty_by_power = int(buying_power / entry_price)
+            qty = min(qty, max_qty_by_power)
+            
+        return max(0, float(qty))
 
     def register_trade(self, symbol: str) -> None:
         self._last_trade[symbol] = datetime.now(timezone.utc)

@@ -10,6 +10,7 @@ class MarketDataSnapshot(BaseModel):
     symbol: str
 
     price: float | None
+    atr: float | None
 
     rsi: float | None
     rsi_prev: float | None

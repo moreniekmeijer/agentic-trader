@@ -1,69 +1,59 @@
-from __future__ import annotations
-
-import os
-
+import asyncio
 import logging
-from typing import Dict
+import os
+from datetime import datetime, timezone
 
-from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
-from agentic_trader.agents.discussion.agent import DiscussionAgent
 from agentic_trader.agents.fundamental.agent import FundamentalsAgent
+from agentic_trader.agents.synthesizer.agent import SynthesizerAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.config.logging import setup_logging
 from agentic_trader.controller.alpaca_controller import AlpacaController
 from agentic_trader.data import sp500_symbols
-from agentic_trader.database.session import get_session
+from agentic_trader.database.models import FundamentalsData, MarketState, TradeJournal
+from agentic_trader.database.session import create_tables, get_session
 from agentic_trader.decision.engine import DecisionEngine
+from agentic_trader.events.bus import EventBus
+from agentic_trader.events.models import (
+    FundamentalsRequestedEvent,
+    ScanCompletedEvent,
+    ScanTriggeredEvent,
+    SymbolAnalysisRequestedEvent,
+)
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
 from agentic_trader.services.fundamentals.fundamentals_engine import FundamentalsEngine
 from agentic_trader.services.fundamentals.providers.yahoo_finance import YahooFundamentalsProvider
 from agentic_trader.services.market_data.feature_builder import FeatureBuilder
+from agentic_trader.services.market_data.indicators.atr import ATRIndicator
 from agentic_trader.services.market_data.indicators.ma import MovingAverageIndicator
 from agentic_trader.services.market_data.indicators.rsi import RSIIndicator
 from agentic_trader.services.market_data.indicators.volume import VolumeIndicator
 from agentic_trader.services.market_data.market_data_engine import MarketDataEngine
 from agentic_trader.services.market_data.multi_timeframe_engine import MultiTimeframeEngine
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
-from agentic_trader.worker.models import CACHE_MAX_AGE, TimeframeData
-from agentic_trader.worker.pnl_sync import PnlSyncJob
-from agentic_trader.worker.scan_state import WorkerState
+from agentic_trader.worker.models import TimeframeData
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 SYMBOLS = sp500_symbols[:10]
-SCAN_INTERVAL = 60  # minutes
-TRADE_INTERVAL = 5  # minutes
-FUNDAMENTALS_INTERVAL = 60  # minutes
-PNL_SYNC_INTERVAL = 60  # minuten
+SCAN_INTERVAL = 24 * 60 * 60  # 24 hours
+TRADE_INTERVAL = 24 * 60 * 60  # 24 hours
 
-# ---------------------------------------------------------------------------
-# Shared state
-# ---------------------------------------------------------------------------
-
-state = WorkerState()
-
-# ---------------------------------------------------------------------------
-# Pipeline factories
-# ---------------------------------------------------------------------------
+# Global instances (can be refactored into a DI container later)
+alpaca_controller = AlpacaController()
+risk_engine = RiskEngine(alpaca_controller)
 
 
 def build_scan_pipeline():
-    """Lightweight pipeline: RSI + Volume."""
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(indicators=[RSIIndicator(), VolumeIndicator()])
+    engine = MarketDataEngine(indicators=[RSIIndicator(), VolumeIndicator(), ATRIndicator()])
     features = FeatureBuilder()
     return provider, engine, features
 
 
 def build_trade_pipeline() -> MultiTimeframeEngine:
-    """Full pipeline: RSI + MA50 + Volume."""
     provider = YahooFinanceProvider()
     engine = MarketDataEngine(indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()])
     features = FeatureBuilder()
@@ -71,168 +61,257 @@ def build_trade_pipeline() -> MultiTimeframeEngine:
 
 
 def build_fundamentals_pipeline() -> FundamentalsEngine:
-    """Fundamentals pipeline."""
     provider = YahooFundamentalsProvider()
     return FundamentalsEngine(provider)
 
 
-def build_discussion_agent() -> DiscussionAgent:
-    return DiscussionAgent(
-        weights={
-            "technical": 0.7,
-            "fundamentals": 0.3,
-        }
-    )
+def build_synthesizer_agent() -> SynthesizerAgent:
+    return SynthesizerAgent(model="llama-3.3-70b-versatile")
+
+
+def build_portfolio_agent():
+    from agentic_trader.agents.portfolio.agent import PortfolioAgent
+    return PortfolioAgent(model="llama-3.3-70b-versatile")
 
 
 # ---------------------------------------------------------------------------
-# Jobs
+# Event Handlers
 # ---------------------------------------------------------------------------
 
+async def handle_scan_triggered(event: ScanTriggeredEvent, bus: EventBus) -> None:
+    logger.info("Handling ScanTriggeredEvent...")
+    # Run sync code in thread to avoid blocking loop
+    def _scan():
+        provider, engine, features = build_scan_pipeline()
+        scanner = ScannerEngine(provider, engine, features)
+        return scanner.scan(SYMBOLS, top_number=10)
 
-def scan_job() -> None:
-    logger.info("Running scanner job...")
-
-    provider, engine, features = build_scan_pipeline()
-    scanner = ScannerEngine(provider, engine, features)
-
-    results = scanner.scan(SYMBOLS, top_number=10)
+    results = await asyncio.to_thread(_scan)
 
     if not results:
-        logger.warning("Scanner returned no results, keeping previous shortlist")
+        logger.warning("Scanner returned no results.")
         return
 
     top_symbols = [r.symbol for r in results]
+    logger.info(f"Scan complete — shortlist: {top_symbols}")
 
-    market_cache: Dict[str, TimeframeData] = {}
-    for symbol in top_symbols:
+    with get_session() as session:
+        state = session.query(MarketState).filter_by(key="active_shortlist").first()
+        if not state:
+            state = MarketState(key="active_shortlist", symbols=top_symbols)
+            session.add(state)
+        else:
+            state.symbols = top_symbols
+        session.commit()
+
+    await bus.publish(ScanCompletedEvent(timestamp=datetime.now(timezone.utc), symbols=top_symbols))
+
+
+async def handle_scan_completed(event: ScanCompletedEvent, bus: EventBus) -> None:
+    for symbol in event.symbols:
+        await bus.publish(FundamentalsRequestedEvent(timestamp=datetime.now(timezone.utc), symbol=symbol))
+
+
+async def handle_fundamentals_requested(event: FundamentalsRequestedEvent, bus: EventBus) -> None:
+    logger.info(f"Fetching fundamentals for {event.symbol}...")
+    
+    def _fetch():
+        engine = build_fundamentals_pipeline()
+        return engine.fetch_many([event.symbol])
+
+    snapshots = await asyncio.to_thread(_fetch)
+    if not snapshots or event.symbol not in snapshots:
+        logger.warning(f"No fundamentals found for {event.symbol}")
+        return
+
+    snapshot = snapshots[event.symbol]
+    
+    with get_session() as session:
+        fd = session.query(FundamentalsData).filter_by(symbol=event.symbol).first()
+        if not fd:
+            fd = FundamentalsData(symbol=event.symbol, data=snapshot.model_dump(mode="json"))
+            session.add(fd)
+        else:
+            fd.data = snapshot.model_dump(mode="json")
+        session.commit()
+        
+    logger.info(f"Saved fundamentals for {event.symbol}.")
+
+
+async def handle_symbol_analysis(event: SymbolAnalysisRequestedEvent, bus: EventBus) -> None:
+    logger.info(f"Analyzing {event.symbol}...")
+
+    def _analyze():
+        provider = YahooFinanceProvider()
         try:
-            market_cache[symbol] = TimeframeData(
-                daily=provider.get_bars(symbol, interval="1d"),
-                h4=provider.get_bars(symbol, interval="4h"),
+            cached_market = TimeframeData(
+                daily=provider.get_bars(event.symbol, interval="1d"),
+                h4=provider.get_bars(event.symbol, interval="4h"),
             )
         except Exception as e:
-            logger.warning(f"Failed to cache market data for {symbol}: {e}")
+            logger.warning(f"Failed to fetch market data for {event.symbol}: {e}")
+            return
 
-    if not market_cache:
-        logger.warning("Could not cache any symbol data, skipping state update")
-        return
+        with get_session() as session:
+            fund_rec = session.query(FundamentalsData).filter_by(symbol=event.symbol).first()
+            fund_data = fund_rec.data if fund_rec else None
+            
+            multi_engine = build_trade_pipeline()
+            discussion_engine = build_synthesizer_agent()
+            decision_engine = DecisionEngine(alpaca_controller, risk_engine, session=session)
+            
+            votes = []
+            mtf_snapshot = multi_engine.compute_from_cache(
+                symbol=event.symbol,
+                df_daily=cached_market.daily,
+                df_4h=cached_market.h4,
+            )
+            votes.append(TechnicalAgent(symbol=event.symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(mtf_snapshot))
+            
+            if fund_data:
+                # We need to recreate the object or just mock the agent to accept dicts for now
+                from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
+                fs = FundamentalsSnapshot(**fund_data)
+                votes.append(FundamentalsAgent(symbol=event.symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(fs))
+            
+            # Fetch past lessons
+            journal_entries = session.query(TradeJournal).filter_by(symbol=event.symbol).order_by(TradeJournal.created_at.desc()).limit(5).all()
+            past_lessons = [j.reflection for j in journal_entries]
+            
+            aggregated = discussion_engine.discuss(symbol=event.symbol, responses=votes, past_lessons=past_lessons)
+            decision_engine.execute_decision(aggregated)
 
-    valid_symbols = [s for s in top_symbols if s in market_cache]
-    state.update_market(symbols=valid_symbols, cache=market_cache)
-    logger.info(f"Scan complete — shortlist: {valid_symbols}")
+    await asyncio.to_thread(_analyze)
 
 
-def fundamentals_job() -> None:
-    logger.info("Running fundamentals job")
-
-    symbols = state.symbols
-    if not symbols:
-        logger.info("No symbols in state yet, skipping fundamentals fetch")
-        return
-
-    engine = build_fundamentals_pipeline()
-    snapshots = engine.fetch_many(symbols)
-
-    if not snapshots:
-        logger.warning("No fundamentals fetched, keeping previous cache")
-        return
-
-    state.update_fundamentals(snapshots)
-    logger.info(f"Fundamentals updated for: {list(snapshots.keys())}")
-
-
-def trade_job() -> None:
-    logger.info("Starting trading cycle")
-
-    if not state.is_market_fresh():
-        logger.warning(f"Market cache is stale (> {CACHE_MAX_AGE}), skipping trading")
-        return
-
-    controller = AlpacaController()
-    risk_engine = RiskEngine(controller)
-    multi_engine = build_trade_pipeline()
-    discussion_engine = build_discussion_agent()
-
-    for symbol in state.symbols:
+async def handle_position_review(event, bus: EventBus) -> None:
+    logger.info("Handling PositionReviewEvent...")
+    
+    def _review():
         try:
-            with get_session() as session:
-                decision_engine = DecisionEngine(controller, risk_engine, session=session)
-                _trade_symbol(symbol, multi_engine, discussion_engine, decision_engine)
+            positions = alpaca_controller.get_positions()
         except Exception as e:
-            logger.error(f"Error processing {symbol}: {e}", exc_info=True)
+            logger.error(f"Failed to fetch positions for review: {e}")
+            return
+            
+        if not positions:
+            logger.info("No open positions to review.")
+            return
+            
+        provider = YahooFinanceProvider()
+        portfolio_agent = build_portfolio_agent()
+        
+        with get_session() as session:
+            decision_engine = DecisionEngine(alpaca_controller, risk_engine, session=session)
+            
+            from agentic_trader.database.models import Decision
+            
+            for pos in positions:
+                symbol = pos.symbol
+                current_price = float(pos.current_price)
+                unrealized_pnl_pct = float(pos.unrealized_plpc)
+                
+                # Fetch ATR (requires fetching daily bars and running features)
+                atr = None
+                try:
+                    df_daily = provider.get_bars(symbol, interval="1d")
+                    df_4h = provider.get_bars(symbol, interval="4h")
+                    engine = build_trade_pipeline()
+                    mtf = engine.compute_from_cache(symbol, df_daily=df_daily, df_4h=df_4h)
+                    atr = mtf.daily.atr if mtf and mtf.daily else None
+                except Exception as e:
+                    logger.warning(f"Could not fetch ATR for review of {symbol}: {e}")
+                
+                # Fetch original reasoning
+                last_decision = session.query(Decision).filter_by(symbol=symbol, signal="BUY").order_by(Decision.timestamp.desc()).first()
+                original_thesis = last_decision.reasoning if last_decision else []
+                
+                logger.info(f"Reviewing {symbol} | Price: {current_price} | PnL: {unrealized_pnl_pct:.2%}")
+                
+                decision = portfolio_agent.review_position(
+                    symbol=symbol,
+                    current_price=current_price,
+                    unrealized_pnl_pct=unrealized_pnl_pct,
+                    atr=atr,
+                    original_thesis=original_thesis,
+                )
+                
+                decision_engine.execute_review_decision(decision, symbol)
+                
+    await asyncio.to_thread(_review)
 
 
 # ---------------------------------------------------------------------------
-# Per-symbol trade logic
+# Schedulers (Clock)
 # ---------------------------------------------------------------------------
 
+async def run_scheduler(bus: EventBus):
+    """Simple clock to emit events periodically."""
+    logger.info("Scheduler started.")
+    
+    scan_timer = 0
+    trade_timer = TRADE_INTERVAL  # Set to interval so it fires immediately on first tick
+    
+    # Emit initial scan immediately
+    await bus.publish(ScanTriggeredEvent(timestamp=datetime.now(timezone.utc)))
+    
+    # Give the initial scan 5 seconds to finish before the first tick
+    await asyncio.sleep(5)
+    
+    while True:
+        if scan_timer >= SCAN_INTERVAL:
+            await bus.publish(ScanTriggeredEvent(timestamp=datetime.now(timezone.utc)))
+            scan_timer = 0
+            
+        if trade_timer >= TRADE_INTERVAL:
+            with get_session() as session:
+                state = session.query(MarketState).filter_by(key="active_shortlist").first()
+                symbols = state.symbols if state else []
+                
+            for symbol in symbols:
+                await bus.publish(SymbolAnalysisRequestedEvent(timestamp=datetime.now(timezone.utc), symbol=symbol))
+            trade_timer = 0
+            
+            # Fire position review event
+            from agentic_trader.events.models import PositionReviewEvent
+            await bus.publish(PositionReviewEvent(timestamp=datetime.now(timezone.utc)))
 
-def _trade_symbol(
-    symbol: str,
-    multi_engine: MultiTimeframeEngine,
-    discussion_engine: DiscussionAgent,
-    decision_engine: DecisionEngine,
-) -> None:
-    cached = state.get_market(symbol)
-    if cached is None:
-        logger.warning(f"{symbol}: no cached market data, skipping")
-        return
-
-    votes = []
-
-    # --- Technical agent ---
-    mtf_snapshot = multi_engine.compute_from_cache(
-        symbol=symbol,
-        df_daily=cached.daily,
-        df_4h=cached.h4,
-    )
-    votes.append(
-        TechnicalAgent(
-            symbol=symbol,
-            buy_threshold=0.3,
-            sell_threshold=0.3,
-        ).generate_signal(mtf_snapshot)
-    )
-
-    # --- Fundamentals agent ---
-    fund_snapshot = state.get_fundamentals(symbol)
-    if fund_snapshot is not None:
-        votes.append(
-            FundamentalsAgent(
-                symbol=symbol,
-                buy_threshold=0.3,
-                sell_threshold=0.3,
-            ).generate_signal(fund_snapshot)
-        )
-    else:
-        logger.debug(f"{symbol}: no fundamentals available, technical only")
-
-    # --- Discussion ---
-    aggregated = discussion_engine.discuss(symbol=symbol, responses=votes)
-
-    # --- Decision + Risk + Execute ---
-    decision_engine.execute_decision(aggregated)
+        await asyncio.sleep(60)
+        scan_timer += 60
+        trade_timer += 60
 
 
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+async def main():
     setup_logging()
     load_dotenv(os.getenv("ENV_FILE"))
+    create_tables()
 
-    logger.info("Starting worker")
+    logger.info("Starting agentic worker...")
 
-    scan_job()
-    fundamentals_job()
-    trade_job()
-    pnl_sync = PnlSyncJob(AlpacaController())
+    bus = EventBus()
+    
+    # Register handlers
+    bus.subscribe(ScanTriggeredEvent, lambda e: handle_scan_triggered(e, bus))
+    bus.subscribe(ScanCompletedEvent, lambda e: handle_scan_completed(e, bus))
+    bus.subscribe(FundamentalsRequestedEvent, lambda e: handle_fundamentals_requested(e, bus))
+    bus.subscribe(SymbolAnalysisRequestedEvent, lambda e: handle_symbol_analysis(e, bus))
+    
+    from agentic_trader.events.models import PositionReviewEvent
+    bus.subscribe(PositionReviewEvent, lambda e: handle_position_review(e, bus))
 
-    scheduler = BlockingScheduler()
-    scheduler.add_job(scan_job, "interval", minutes=SCAN_INTERVAL)
-    scheduler.add_job(fundamentals_job, "interval", minutes=FUNDAMENTALS_INTERVAL)
-    scheduler.add_job(trade_job, "interval", minutes=TRADE_INTERVAL)
-    scheduler.add_job(pnl_sync.run, "interval", minutes=PNL_SYNC_INTERVAL)
-    scheduler.start()
+    await bus.start()
+    
+    scheduler_task = asyncio.create_task(run_scheduler(bus))
+    
+    try:
+        await scheduler_task
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        await bus.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())

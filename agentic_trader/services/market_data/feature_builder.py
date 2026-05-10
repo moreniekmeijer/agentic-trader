@@ -20,6 +20,7 @@ class FeatureBuilder:
         close = safe("close")
         volume = safe("volume")
         volume_avg = safe("volume_avg")
+        atr = safe("atr")
 
         trend: Trend | None = None
         if ma_50 and close:
@@ -32,6 +33,7 @@ class FeatureBuilder:
         return MarketDataSnapshot(
             symbol=symbol,
             price=close,
+            atr=atr,
             rsi=rsi,
             rsi_prev=prev_rsi,
             rsi_trend=rsi_trend,

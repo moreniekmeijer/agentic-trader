@@ -17,6 +17,8 @@ dependencies = [
     "yfinance",
     "pydantic",
     "python-dotenv",
+    "openai>=2.36.0",
+    "groq>=1.2.0",
 ]
 
 [dependency-groups]

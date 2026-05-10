@@ -107,8 +107,9 @@ def to_trade(
     qty: float,
     order: Any,
     decision_id: int,
+    intended_price: float | None = None,
 ) -> Trade:
-    price = extract_price(order)
+    price = extract_price(order) or intended_price
 
     return Trade(
         symbol=symbol.upper(),

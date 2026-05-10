@@ -19,6 +19,16 @@ class TechnicalAgent(BaseAgent):
         reasons_buy = []
         reasons_sell = []
 
+        if daily.atr is not None:
+            atr_info = f"Daily ATR (Volatility) is {daily.atr:.2f}"
+            reasons_buy.append(atr_info)
+            reasons_sell.append(atr_info)
+            
+        if daily.price is not None:
+            price_info = f"Current Price is {daily.price:.2f}"
+            reasons_buy.append(price_info)
+            reasons_sell.append(price_info)
+
         # -----------------------------
         # RSI cross
         # -----------------------------

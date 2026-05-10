@@ -1,5 +1,6 @@
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
 
 from agentic_trader.controller.alpaca_controller import AlpacaController
 

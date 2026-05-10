@@ -1,11 +1,8 @@
 import os
-from datetime import datetime
 
-import requests
-from alpaca.broker import GetAccountActivitiesRequest
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import ActivityType, OrderSide, OrderStatus, QueryOrderStatus, TimeInForce
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
+from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
+from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest, StopLossRequest, TakeProfitRequest
 
 
 class AlpacaController:
@@ -59,42 +56,45 @@ class AlpacaController:
             print(f"Error checking open orders: {e}")
             return False
 
-    def get_fill_activities(self) -> list:
-        """Haalt FILL activiteiten op via Alpaca REST API."""
-        try:
-            url = "https://paper-api.alpaca.markets/v2/account/activities/FILL"
-            headers = {
-                "APCA-API-KEY-ID": self.api_key,
-                "APCA-API-SECRET-KEY": self.secret_key,
-            }
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"Could not fetch Alpaca activities: {e}")
-            return []
-
     def get_orders(self):
         return self.client.get_orders()
 
-    def place_market_order(self, symbol: str, qty: float, side: str):
+    def sell(self, symbol: str, qty: float):
+        """Helper to place a simple market sell order."""
         try:
             order = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
-                side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                side=OrderSide.SELL,
                 time_in_force=TimeInForce.DAY,
             )
-
-            response = self.client.submit_order(order)
-            return response
-
+            return self.client.submit_order(order)
         except Exception as e:
-            print(f"[ERROR] Order failed: {e}")
+            print(f"[ERROR] Sell failed: {e}")
             raise
 
-    def buy(self, symbol: str, qty: float):
-        return self.place_market_order(symbol, qty, "buy")
+    def place_bracket_order(self, symbol: str, qty: float, side: str, limit_price: float, stop_loss_price: float, take_profit_price: float):
+        try:
+            order = LimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                time_in_force=TimeInForce.GTC,
+                limit_price=limit_price,
+                order_class=OrderClass.BRACKET,
+                take_profit=TakeProfitRequest(limit_price=take_profit_price),
+                stop_loss=StopLossRequest(stop_price=stop_loss_price),
+            )
+            response = self.client.submit_order(order)
+            return response
+        except Exception as e:
+            print(f"[ERROR] Bracket Order failed: {e}")
+            raise
 
-    def sell(self, symbol: str, qty: float):
-        return self.place_market_order(symbol, qty, "sell")
+    def close_position(self, symbol: str):
+        try:
+            response = self.client.close_position(symbol_or_asset_id=symbol)
+            return response
+        except Exception as e:
+            print(f"[ERROR] Failed to close position for {symbol}: {e}")
+            raise
