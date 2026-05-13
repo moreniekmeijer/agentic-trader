@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from agentic_trader.agents.fundamental.agent import FundamentalsAgent
+from agentic_trader.agents.sentiment.agent import SentimentAgent
 from agentic_trader.agents.synthesizer.agent import SynthesizerAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.config.logging import setup_logging
@@ -20,6 +21,7 @@ from agentic_trader.events.models import (
     ScanCompletedEvent,
     ScanTriggeredEvent,
     SymbolAnalysisRequestedEvent,
+    BatchAnalysisRequestedEvent,
 )
 from agentic_trader.risk.engine import RiskEngine
 from agentic_trader.scanner.engine import ScannerEngine
@@ -158,9 +160,12 @@ async def handle_symbol_analysis(event: SymbolAnalysisRequestedEvent, bus: Event
             
             multi_engine = build_trade_pipeline()
             discussion_engine = build_synthesizer_agent()
+            sentiment_agent = SentimentAgent()
             decision_engine = DecisionEngine(alpaca_controller, risk_engine, session=session)
             
             votes = []
+            
+            # 1. Technical Analysis
             mtf_snapshot = multi_engine.compute_from_cache(
                 symbol=event.symbol,
                 df_daily=cached_market.daily,
@@ -168,11 +173,18 @@ async def handle_symbol_analysis(event: SymbolAnalysisRequestedEvent, bus: Event
             )
             votes.append(TechnicalAgent(symbol=event.symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(mtf_snapshot))
             
+            # 2. Fundamental Analysis
             if fund_data:
-                # We need to recreate the object or just mock the agent to accept dicts for now
                 from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
                 fs = FundamentalsSnapshot(**fund_data)
                 votes.append(FundamentalsAgent(symbol=event.symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(fs))
+            
+            # 3. Sentiment Analysis (New)
+            try:
+                news = alpaca_controller.get_news(event.symbol, limit=5)
+                votes.append(sentiment_agent.generate_signal(event.symbol, news))
+            except Exception as e:
+                logger.warning(f"Sentiment analysis skipped for {event.symbol}: {e}")
             
             # Fetch past lessons
             journal_entries = session.query(TradeJournal).filter_by(symbol=event.symbol).order_by(TradeJournal.created_at.desc()).limit(5).all()
@@ -182,6 +194,77 @@ async def handle_symbol_analysis(event: SymbolAnalysisRequestedEvent, bus: Event
             decision_engine.execute_decision(aggregated)
 
     await asyncio.to_thread(_analyze)
+
+
+async def handle_batch_analysis(event: BatchAnalysisRequestedEvent, bus: EventBus) -> None:
+    logger.info(f"Arena Mode: Analyzing batch of {len(event.symbols)} symbols...")
+
+    def _analyze_all():
+        symbol_reports = {}
+        past_lessons_batch = {}
+        
+        provider = YahooFinanceProvider()
+        multi_engine = build_trade_pipeline()
+        sentiment_agent = SentimentAgent()
+        
+        with get_session() as session:
+            for symbol in event.symbols:
+                try:
+                    # 1. Market Data
+                    df_daily = provider.get_bars(symbol, interval="1d")
+                    df_4h = provider.get_bars(symbol, interval="4h")
+                    mtf_snapshot = multi_engine.compute_from_cache(symbol, df_daily=df_daily, df_4h=df_4h)
+                    
+                    # 2. Fundamentals
+                    fund_rec = session.query(FundamentalsData).filter_by(symbol=symbol).first()
+                    fund_data = fund_rec.data if fund_rec else None
+                    
+                    votes = []
+                    # Technical
+                    votes.append(TechnicalAgent(symbol=symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(mtf_snapshot))
+                    # Fundamentals
+                    if fund_data:
+                        from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
+                        votes.append(FundamentalsAgent(symbol=symbol, buy_threshold=0.3, sell_threshold=0.3).generate_signal(FundamentalsSnapshot(**fund_data)))
+                    # Sentiment
+                    news = alpaca_controller.get_news(symbol, limit=5)
+                    votes.append(sentiment_agent.generate_signal(symbol, news))
+                    
+                    symbol_reports[symbol] = votes
+                    
+                    # Past lessons
+                    journal_entries = session.query(TradeJournal).filter_by(symbol=symbol).order_by(TradeJournal.created_at.desc()).limit(3).all()
+                    past_lessons_batch[symbol] = [j.reflection for j in journal_entries if j.reflection]
+                    
+                except Exception as e:
+                    logger.warning(f"Skipping {symbol} in batch due to error: {e}")
+
+            if not symbol_reports:
+                logger.warning("No symbols were successfully analyzed in batch.")
+                return
+
+            # 3. Global Synthesis (The Arena)
+            synthesizer = build_synthesizer_agent()
+            decisions = synthesizer.discuss_batch(symbol_reports, past_lessons=past_lessons_batch)
+            
+            # 4. Execution
+            decision_engine = DecisionEngine(alpaca_controller, risk_engine, session=session)
+            for decision in decisions:
+                decision_engine.execute_decision(decision)
+
+    await asyncio.to_thread(_analyze_all)
+
+
+async def handle_reflection_triggered(event, bus: EventBus) -> None:
+    logger.info("Handling ReflectionTriggeredEvent...")
+    
+    def _reflect():
+        from agentic_trader.services.reflection.reflector_service import ReflectorService
+        with get_session() as session:
+            service = ReflectorService(session, alpaca_controller)
+            service.run_reflection_cycle()
+            
+    await asyncio.to_thread(_reflect)
 
 
 async def handle_position_review(event, bus: EventBus) -> None:
@@ -267,14 +350,16 @@ async def run_scheduler(bus: EventBus):
             with get_session() as session:
                 state = session.query(MarketState).filter_by(key="active_shortlist").first()
                 symbols = state.symbols if state else []
-                
-            for symbol in symbols:
-                await bus.publish(SymbolAnalysisRequestedEvent(timestamp=datetime.now(timezone.utc), symbol=symbol))
+            
+            if symbols:
+                await bus.publish(BatchAnalysisRequestedEvent(timestamp=datetime.now(timezone.utc), symbols=symbols))
+            
             trade_timer = 0
             
-            # Fire position review event
-            from agentic_trader.events.models import PositionReviewEvent
+            # Fire position review and reflection events
+            from agentic_trader.events.models import PositionReviewEvent, ReflectionTriggeredEvent
             await bus.publish(PositionReviewEvent(timestamp=datetime.now(timezone.utc)))
+            await bus.publish(ReflectionTriggeredEvent(timestamp=datetime.now(timezone.utc)))
 
         await asyncio.sleep(60)
         scan_timer += 60
@@ -299,9 +384,11 @@ async def main():
     bus.subscribe(ScanCompletedEvent, lambda e: handle_scan_completed(e, bus))
     bus.subscribe(FundamentalsRequestedEvent, lambda e: handle_fundamentals_requested(e, bus))
     bus.subscribe(SymbolAnalysisRequestedEvent, lambda e: handle_symbol_analysis(e, bus))
+    bus.subscribe(BatchAnalysisRequestedEvent, lambda e: handle_batch_analysis(e, bus))
     
-    from agentic_trader.events.models import PositionReviewEvent
+    from agentic_trader.events.models import PositionReviewEvent, ReflectionTriggeredEvent
     bus.subscribe(PositionReviewEvent, lambda e: handle_position_review(e, bus))
+    bus.subscribe(ReflectionTriggeredEvent, lambda e: handle_reflection_triggered(e, bus))
 
     await bus.start()
     

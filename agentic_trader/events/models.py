@@ -34,6 +34,11 @@ class FundamentalsRequestedEvent(Event):
 class SymbolAnalysisRequestedEvent(Event):
     """Fired when a symbol should be analyzed by the agents."""
     symbol: str
+
+@dataclass
+class BatchAnalysisRequestedEvent(Event):
+    """Fired when multiple symbols should be analyzed in Arena Mode."""
+    symbols: list[str]
     
 @dataclass
 class BracketOrderRequestedEvent(Event):
@@ -49,4 +54,9 @@ class BracketOrderRequestedEvent(Event):
 @dataclass
 class PositionReviewEvent(Event):
     """Fired daily to let the SynthesizerAgent review currently open positions."""
+    pass
+
+@dataclass
+class ReflectionTriggeredEvent(Event):
+    """Fired to scan for closed trades and generate AI reflections."""
     pass
