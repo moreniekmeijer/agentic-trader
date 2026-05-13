@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-Signal = Literal["BUY", "SELL", "HOLD"]
+Signal = Literal["BUY", "SELL", "HOLD", "NEUTRAL"]
 
 
 class AgentResponse(BaseModel):

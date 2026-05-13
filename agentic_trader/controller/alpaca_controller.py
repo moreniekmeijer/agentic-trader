@@ -1,5 +1,7 @@
 import os
 
+from alpaca.data.historical.news import NewsClient
+from alpaca.data.requests import NewsRequest
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest, StopLossRequest, TakeProfitRequest
@@ -14,6 +16,7 @@ class AlpacaController:
             raise ValueError("Missing Alpaca API credentials")
 
         self.client = TradingClient(api_key=self.api_key, secret_key=self.secret_key, paper=True)
+        self.news_client = NewsClient(api_key=self.api_key, secret_key=self.secret_key)
 
     def get_account(self):
         return self.client.get_account()
@@ -90,6 +93,38 @@ class AlpacaController:
         except Exception as e:
             print(f"[ERROR] Bracket Order failed: {e}")
             raise
+
+    def get_news(self, symbol: str, limit: int = 5):
+        import json
+        import urllib.request
+        from datetime import datetime, timedelta, timezone
+        
+        try:
+            start = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            url = f"https://data.alpaca.markets/v1beta1/news?symbols={symbol}&limit={limit}&start={start}"
+            
+            req = urllib.request.Request(url)
+            req.add_header("APCA-API-KEY-ID", self.api_key)
+            req.add_header("APCA-API-SECRET-KEY", self.secret_key)
+            req.add_header("accept", "application/json")
+            
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read().decode())
+                
+            articles = data.get("news", [])
+            
+            return [
+                {
+                    "headline": a.get("headline", ""),
+                    "summary": a.get("summary", ""),
+                    "source": a.get("source", ""),
+                    "url": a.get("url", "")
+                }
+                for a in articles
+            ]
+        except Exception as e:
+            print(f"[ERROR] Direct news fetch failed for {symbol}: {e}")
+            return []
 
     def close_position(self, symbol: str):
         try:

@@ -12,7 +12,7 @@ class ScannerEngine:
         self.market_engine = market_engine
         self.feature_builder = feature_builder
 
-    def scan(self, symbols: List[str], top_number: int = 10) -> List[ScanResult]:
+    def scan(self, symbols: List[str], top_number: int = 3) -> List[ScanResult]:
         results = []
 
         for symbol in symbols:
