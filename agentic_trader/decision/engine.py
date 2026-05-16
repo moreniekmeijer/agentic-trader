@@ -11,7 +11,7 @@ from agentic_trader.database.mapper import (
     to_trade,
 )
 from agentic_trader.database.models import Trade
-from agentic_trader.database.repository import TradeRepository
+from agentic_trader.database.repositories.trades import TradeRepository
 
 logger = logging.getLogger(__name__)
 
@@ -59,16 +59,24 @@ class DecisionEngine:
         Executes a PortfolioDecision (HOLD or CLOSE_EARLY).
         """
         logger.info(f"DecisionEngine received review for {symbol}: {decision.action}")
-        
+
         if decision.action == "CLOSE_EARLY":
             logger.info(f"{symbol}: PortfolioAgent chose to CLOSE_EARLY. Executing market order to exit...")
             try:
                 # Alpaca will cancel associated OCO bracket legs automatically when position is closed
                 order = self.alpaca.close_position(symbol)
-                logger.info(f"{symbol}: Successfully closed position manually. Order ID: {getattr(order, 'id', 'unknown')}")
-                
+                order_id = getattr(order, "id", "unknown")
+                logger.info(
+                    f"{symbol}: Successfully closed position manually. Order ID: {order_id}"
+                )
+
                 # Update Trade in DB
-                trade = self.session.query(Trade).filter_by(symbol=symbol, side="buy").order_by(Trade.timestamp.desc()).first()
+                trade = (
+                    self.session.query(Trade)
+                    .filter_by(symbol=symbol, side="buy")
+                    .order_by(Trade.timestamp.desc())
+                    .first()
+                )
                 if trade:
                     # Logic for manual close status update can be added here
                     pass
@@ -91,22 +99,29 @@ class DecisionEngine:
             return None
 
         if response.signal == "BUY":
-            if not response.entry_price or not response.stop_loss_price or not response.take_profit_price or not response.conviction:
+            if (
+                not response.entry_price
+                or not response.stop_loss_price
+                or not response.take_profit_price
+                or not response.conviction
+            ):
                 logger.warning(f"{symbol}: Missing bracket targets or conviction. Cannot place order.")
                 return None
-            
-            qty = self.risk.get_allowed_qty(symbol, response.entry_price, response.stop_loss_price, response.conviction)
+
+            qty = self.risk.get_allowed_qty(
+                symbol, response.entry_price, response.stop_loss_price, response.conviction
+            )
             if qty <= 0:
                 logger.info(f"{symbol}: no qty allowed")
                 return None
-            
+
             order = self.alpaca.place_bracket_order(
                 symbol=symbol,
                 qty=qty,
                 side="buy",
                 limit_price=response.entry_price,
                 stop_loss_price=response.stop_loss_price,
-                take_profit_price=response.take_profit_price
+                take_profit_price=response.take_profit_price,
             )
             return order, qty
 
@@ -138,6 +153,4 @@ class DecisionEngine:
 
         self.session.commit()
 
-        logger.info(
-            f"Trade saved: {response.signal} {trade.qty} {response.symbol} @ {trade.price}"
-        )
+        logger.info(f"Trade saved: {response.signal} {trade.qty} {response.symbol} @ {trade.price}")

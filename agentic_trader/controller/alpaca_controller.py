@@ -1,10 +1,23 @@
+import json
+import logging
 import os
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from typing import Any
 
 from alpaca.data.historical.news import NewsClient
-from alpaca.data.requests import NewsRequest
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
-from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest, StopLossRequest, TakeProfitRequest
+from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    LimitOrderRequest,
+    MarketOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class AlpacaController:
@@ -23,6 +36,12 @@ class AlpacaController:
 
     def get_positions(self):
         return self.client.get_all_positions()
+
+    def get_open_orders(self):
+        return self.get_orders(status=QueryOrderStatus.OPEN)
+
+    def get_recent_orders(self, limit: int = 100):
+        return self.get_orders(status=QueryOrderStatus.CLOSED, limit=limit)
 
     def get_position(self, symbol: str) -> float:
         try:
@@ -59,8 +78,43 @@ class AlpacaController:
             print(f"Error checking open orders: {e}")
             return False
 
-    def get_orders(self):
-        return self.client.get_orders()
+    def get_orders(self, status: QueryOrderStatus | None = None, limit: int | None = None):
+        if status is None and limit is None:
+            return self.client.get_orders()
+
+        request_args = {}
+        if status is not None:
+            request_args["status"] = status
+        if limit is not None:
+            request_args["limit"] = limit
+
+        request = GetOrdersRequest(**request_args)
+        return self.client.get_orders(filter=request)
+
+    def get_fill_activities(
+        self,
+        *,
+        page_size: int = 100,
+        after: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        query = {"page_size": str(page_size)}
+        if after is not None:
+            query["after"] = after.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        url = "https://paper-api.alpaca.markets/v2/account/activities/FILL"
+        if query:
+            url = f"{url}?{urllib.parse.urlencode(query)}"
+
+        try:
+            payload = self._get_json(url)
+        except Exception:
+            logger.error("Failed to fetch Alpaca fill activities", exc_info=True)
+            raise
+
+        if not isinstance(payload, list):
+            return []
+
+        return [activity for activity in payload if isinstance(activity, dict)]
 
     def sell(self, symbol: str, qty: float):
         """Helper to place a simple market sell order."""
@@ -76,7 +130,15 @@ class AlpacaController:
             print(f"[ERROR] Sell failed: {e}")
             raise
 
-    def place_bracket_order(self, symbol: str, qty: float, side: str, limit_price: float, stop_loss_price: float, take_profit_price: float):
+    def place_bracket_order(
+        self,
+        symbol: str,
+        qty: float,
+        side: str,
+        limit_price: float,
+        stop_loss_price: float,
+        take_profit_price: float,
+    ):
         try:
             order = LimitOrderRequest(
                 symbol=symbol,
@@ -95,30 +157,23 @@ class AlpacaController:
             raise
 
     def get_news(self, symbol: str, limit: int = 5):
-        import json
-        import urllib.request
-        from datetime import datetime, timedelta, timezone
-        
+        from datetime import timedelta
+
         try:
             start = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
             url = f"https://data.alpaca.markets/v1beta1/news?symbols={symbol}&limit={limit}&start={start}"
-            
-            req = urllib.request.Request(url)
-            req.add_header("APCA-API-KEY-ID", self.api_key)
-            req.add_header("APCA-API-SECRET-KEY", self.secret_key)
-            req.add_header("accept", "application/json")
-            
-            with urllib.request.urlopen(req) as response:
-                data = json.loads(response.read().decode())
-                
+
+            data = self._get_json(url)
+            if not isinstance(data, dict):
+                return []
             articles = data.get("news", [])
-            
+
             return [
                 {
                     "headline": a.get("headline", ""),
                     "summary": a.get("summary", ""),
                     "source": a.get("source", ""),
-                    "url": a.get("url", "")
+                    "url": a.get("url", ""),
                 }
                 for a in articles
             ]
@@ -133,3 +188,12 @@ class AlpacaController:
         except Exception as e:
             print(f"[ERROR] Failed to close position for {symbol}: {e}")
             raise
+
+    def _get_json(self, url: str) -> Any:
+        req = urllib.request.Request(url)
+        req.add_header("APCA-API-KEY-ID", self.api_key)
+        req.add_header("APCA-API-SECRET-KEY", self.secret_key)
+        req.add_header("accept", "application/json")
+
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode())

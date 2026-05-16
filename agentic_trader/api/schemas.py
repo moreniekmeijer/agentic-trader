@@ -60,13 +60,73 @@ class TradeResponse(BaseModel):
     timestamp: datetime
     side: str
     qty: float
-    price: float
+    price: float | None
     alpaca_order_id: str | None
     closed_at: datetime | None
     close_price: float | None
     pnl: float | None
     pnl_pct: float | None
     decision_id: int | None
+
+
+class BrokerSnapshotResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    fetched_at: datetime
+    account_id: str | None
+    status: str | None
+    currency: str | None
+    cash: float
+    buying_power: float
+    equity: float
+    portfolio_value: float
+    invested_value: float
+    position_count: int
+    open_order_count: int
+    issue_count: int
+    data: dict
+
+
+class OrderLifecycleResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    broker_order_id: str
+    client_order_id: str | None
+    symbol: str
+    side: str | None
+    order_type: str | None
+    order_class: str | None
+    status: str
+    qty: float | None
+    filled_qty: float | None
+    filled_avg_price: float | None
+    limit_price: float | None
+    stop_price: float | None
+    submitted_at: datetime | None
+    broker_updated_at: datetime | None
+    last_seen_at: datetime
+
+
+class PositionLifecycleResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    symbol: str
+    status: str
+    opened_at: datetime | None
+    closed_at: datetime | None
+    qty: float
+    avg_entry_price: float | None
+    market_value: float | None
+    current_price: float | None
+    unrealized_pl: float | None
+    unrealized_plpc: float | None
+    thesis: str | None
+    invalidation: str | None
+    expected_horizon_days: int | None
+    last_broker_seen_at: datetime
 
 
 class AgentPerformanceResponse(BaseModel):

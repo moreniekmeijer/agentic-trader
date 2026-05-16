@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
 
@@ -36,7 +36,7 @@ class SymbolCache(BaseModel):
 class FundamentalsCache(BaseModel):
     """Fundamentals per symbol, refreshed daily."""
 
-    data: Dict[str, FundamentalsSnapshot] = {}
+    data: Dict[str, FundamentalsSnapshot] = Field(default_factory=dict)
 
     def get(self, symbol: str) -> FundamentalsSnapshot | None:
         return self.data.get(symbol)
