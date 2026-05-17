@@ -62,6 +62,7 @@ class BrokerOrder(BaseModel):
     filled_avg_price: float | None = None
     limit_price: float | None = None
     stop_price: float | None = None
+    leg_order_ids: list[str] = Field(default_factory=list)
     submitted_at: datetime | None = None
     updated_at: datetime | None = None
 

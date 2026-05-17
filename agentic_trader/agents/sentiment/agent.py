@@ -5,7 +5,7 @@ from typing import List
 
 from groq import Groq
 
-from agentic_trader.agents.models import AgentVote
+from agentic_trader.agents.models import AgentResponse
 
 logger = logging.getLogger(__name__)
 
@@ -15,21 +15,22 @@ class SentimentAgent:
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = model
 
-    def generate_signal(self, symbol: str, news_articles: List) -> AgentVote:
+    def generate_signal(self, symbol: str, news_articles: List) -> AgentResponse:
         if not news_articles:
-            return AgentVote(
-                agent="sentiment",
+            return AgentResponse(
                 symbol=symbol,
                 signal="NEUTRAL",
                 confidence=0.5,
                 reasoning=["No recent news articles found for analysis."],
-                weight=0.0
+                agent="sentiment",
             )
 
         news_context = []
         for art in news_articles:
             # Handle both object and dict
-            headline = getattr(art, "headline", art.get("headline") if isinstance(art, dict) else "No Headline")
+            headline = getattr(
+                art, "headline", art.get("headline") if isinstance(art, dict) else "No Headline"
+            )
             summary = getattr(art, "summary", art.get("summary") if isinstance(art, dict) else "No Summary")
             source = getattr(art, "source", art.get("source") if isinstance(art, dict) else "Unknown Source")
             news_context.append(f"Headline: {headline}\nSummary: {summary}\nSource: {source}")
@@ -60,30 +61,34 @@ JSON Response:"""
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a logical financial analyst. Output ONLY valid JSON."},
+                    {
+                        "role": "system",
+                        "content": "You are a logical financial analyst. Output ONLY valid JSON.",
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
             )
 
             response = json.loads(completion.choices[0].message.content)
+            signal = response.get("signal", "NEUTRAL").upper()
+            if signal not in {"BUY", "SELL", "HOLD", "NEUTRAL"}:
+                signal = "NEUTRAL"
 
-            return AgentVote(
-                agent="sentiment",
+            return AgentResponse(
                 symbol=symbol,
-                signal=response.get("signal", "NEUTRAL").upper(),
+                signal=signal,
                 confidence=float(response.get("confidence", 0.5)),
                 reasoning=response.get("reasoning", ["No specific reasoning provided."]),
-                weight=1.0
+                agent="sentiment",
             )
 
         except Exception as e:
             logger.error(f"Sentiment analysis failed for {symbol}: {e}")
-            return AgentVote(
-                agent="sentiment",
+            return AgentResponse(
                 symbol=symbol,
                 signal="NEUTRAL",
                 confidence=0.5,
                 reasoning=[f"Error during analysis: {e}"],
-                weight=0.0
+                agent="sentiment",
             )

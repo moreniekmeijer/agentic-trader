@@ -2,13 +2,16 @@ import asyncio
 import logging
 
 from agentic_trader.agents.fundamental.agent import FundamentalsAgent
+from agentic_trader.agents.models import AggregatedResponse
 from agentic_trader.agents.sentiment.agent import SentimentAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
 from agentic_trader.database.models import FundamentalsData, TradeJournal
 from agentic_trader.database.session import get_session
 from agentic_trader.decision.engine import DecisionEngine
+from agentic_trader.decision.portfolio_manager import PortfolioManager
 from agentic_trader.events.bus import EventBus
 from agentic_trader.events.models import BatchAnalysisRequestedEvent, SymbolAnalysisRequestedEvent
+from agentic_trader.scanner.models import CandidateReport
 from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
 from agentic_trader.worker.context import WorkerContext
@@ -92,6 +95,21 @@ async def handle_symbol_analysis(
                 responses=votes,
                 past_lessons=past_lessons,
             )
+            aggregated = _attach_candidate_context(
+                aggregated,
+                CandidateReport(
+                    symbol=event.symbol,
+                    stage="sentiment_enriched",
+                    market_snapshot=mtf_snapshot.model_dump(mode="json"),
+                    agent_responses=votes,
+                ),
+            )
+            portfolio_manager = PortfolioManager()
+            aggregated = portfolio_manager.validate(
+                aggregated,
+                positions=context.alpaca_controller.get_positions(),
+                open_orders=context.alpaca_controller.get_open_orders(),
+            )
             decision_engine.execute_decision(aggregated)
 
     await asyncio.to_thread(_analyze)
@@ -107,6 +125,7 @@ async def handle_batch_analysis(
     def _analyze_all() -> None:
         symbol_reports = {}
         past_lessons_batch = {}
+        candidate_reports: dict[str, CandidateReport] = {}
 
         provider = YahooFinanceProvider()
         multi_engine = build_trade_pipeline()
@@ -142,10 +161,19 @@ async def handle_batch_analysis(
                             ).generate_signal(FundamentalsSnapshot(**fund_data))
                         )
 
-                    news = context.alpaca_controller.get_news(symbol, limit=5)
-                    votes.append(sentiment_agent.generate_signal(symbol, news))
+                    try:
+                        news = context.alpaca_controller.get_news(symbol, limit=5)
+                        votes.append(sentiment_agent.generate_signal(symbol, news))
+                    except Exception as exc:
+                        logger.warning("Sentiment analysis skipped for %s: %s", symbol, exc)
 
                     symbol_reports[symbol] = votes
+                    candidate_reports[symbol] = CandidateReport(
+                        symbol=symbol,
+                        stage="sentiment_enriched",
+                        market_snapshot=mtf_snapshot.model_dump(mode="json"),
+                        agent_responses=votes,
+                    )
 
                     journal_entries = (
                         session.query(TradeJournal)
@@ -166,6 +194,9 @@ async def handle_batch_analysis(
 
             synthesizer = build_synthesizer_agent()
             decisions = synthesizer.discuss_batch(symbol_reports, past_lessons=past_lessons_batch)
+            portfolio_manager = PortfolioManager()
+            positions = context.alpaca_controller.get_positions()
+            open_orders = context.alpaca_controller.get_open_orders()
 
             decision_engine = DecisionEngine(
                 context.alpaca_controller,
@@ -173,6 +204,30 @@ async def handle_batch_analysis(
                 session=session,
             )
             for decision in decisions:
+                report = candidate_reports.get(decision.symbol)
+                if report is not None:
+                    decision = _attach_candidate_context(decision, report)
+                decision = portfolio_manager.validate(
+                    decision,
+                    positions=positions,
+                    open_orders=open_orders,
+                )
                 decision_engine.execute_decision(decision)
 
     await asyncio.to_thread(_analyze_all)
+
+
+def _attach_candidate_context(
+    aggregated: AggregatedResponse,
+    report: CandidateReport,
+) -> AggregatedResponse:
+    evidence = list(aggregated.evidence)
+    for response in report.agent_responses:
+        evidence.extend(response.reasoning)
+
+    return aggregated.model_copy(
+        update={
+            "market_snapshot": report.market_snapshot,
+            "evidence": evidence,
+        }
+    )

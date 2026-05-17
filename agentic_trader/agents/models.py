@@ -1,8 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-Signal = Literal["BUY", "SELL", "HOLD", "NEUTRAL"]
+Signal = Literal["BUY", "SELL", "HOLD", "NEUTRAL", "REDUCE", "EXIT"]
 
 
 class AgentResponse(BaseModel):
@@ -15,6 +15,11 @@ class AgentResponse(BaseModel):
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
     conviction: Literal["LOW", "MEDIUM", "HIGH"] | None = None
+    thesis: str | None = None
+    invalidation: str | None = None
+    expected_horizon_days: int | None = None
+    evidence: list[str] = Field(default_factory=list)
+    market_snapshot: dict | None = None
 
 
 class AgentVote(BaseModel):

@@ -33,8 +33,13 @@ class PortfolioAllocator:
         positions: Sequence[Any],
     ) -> list[OrderIntent]:
         intents: list[OrderIntent] = []
+        sell_candidates = [
+            candidate
+            for candidate in candidates
+            if str(candidate.signal).upper() in {"SELL", "EXIT", "REDUCE"}
+        ]
         ranked_sells = sorted(
-            _signals(candidates, "SELL"),
+            sell_candidates,
             key=lambda candidate: candidate.confidence,
             reverse=True,
         )
@@ -45,6 +50,8 @@ class PortfolioAllocator:
                 continue
 
             qty = self.policy.position_qty(position)
+            if str(candidate.signal).upper() == "REDUCE":
+                qty = qty / 2
             if qty <= 0:
                 continue
 

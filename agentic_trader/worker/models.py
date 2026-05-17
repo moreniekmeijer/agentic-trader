@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
 
 CACHE_MAX_AGE = timedelta(minutes=90)
-FUNDAMENTALS_MAX_AGE = timedelta(hours=24)
+FUNDAMENTALS_MAX_AGE = timedelta(days=7)
 
 
 class TimeframeData(BaseModel):

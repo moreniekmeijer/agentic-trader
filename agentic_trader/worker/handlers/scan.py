@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from agentic_trader.database.models import FundamentalsData, MarketState
 from agentic_trader.database.session import get_session
@@ -47,7 +47,12 @@ async def handle_scan_triggered(event: ScanTriggeredEvent, bus: EventBus, contex
 
 
 async def handle_scan_completed(event: ScanCompletedEvent, bus: EventBus) -> None:
-    for symbol in event.symbols:
+    with get_session() as session:
+        symbols_to_refresh = [
+            symbol for symbol in event.symbols if _fundamentals_are_stale(session, symbol)
+        ]
+
+    for symbol in symbols_to_refresh:
         await bus.publish(FundamentalsRequestedEvent(timestamp=datetime.now(timezone.utc), symbol=symbol))
 
 
@@ -75,3 +80,15 @@ async def handle_fundamentals_requested(event: FundamentalsRequestedEvent, bus: 
         session.commit()
 
     logger.info("Saved fundamentals for %s.", event.symbol)
+
+
+def _fundamentals_are_stale(session, symbol: str) -> bool:
+    record = session.query(FundamentalsData).filter_by(symbol=symbol).first()
+    if record is None or record.updated_at is None:
+        return True
+
+    updated_at = record.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+    return datetime.now(timezone.utc) - updated_at >= timedelta(days=7)

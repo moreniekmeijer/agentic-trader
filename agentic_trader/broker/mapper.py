@@ -51,6 +51,7 @@ def to_broker_order(order: Any) -> BrokerOrder:
         filled_avg_price=_optional_float(_get(order, "filled_avg_price")),
         limit_price=_optional_float(_get(order, "limit_price")),
         stop_price=_optional_float(_get(order, "stop_price")),
+        leg_order_ids=_leg_order_ids(order),
         submitted_at=_optional_datetime(_get(order, "submitted_at")),
         updated_at=_optional_datetime(_get(order, "updated_at")),
     )
@@ -77,6 +78,11 @@ def _get(obj: Any, *names: str) -> Any:
         if hasattr(obj, name):
             return getattr(obj, name)
     return None
+
+
+def _leg_order_ids(order: Any) -> list[str]:
+    legs = _get(order, "legs") or []
+    return [str(order_id) for leg in legs if (order_id := _get(leg, "id")) is not None]
 
 
 def _enum_str(value: Any) -> str | None:

@@ -13,14 +13,28 @@ from agentic_trader.services.market_data.providers.yahoo_finance import YahooFin
 
 def build_scan_pipeline():
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(indicators=[RSIIndicator(), VolumeIndicator(), ATRIndicator()])
+    engine = MarketDataEngine(
+        indicators=[
+            RSIIndicator(),
+            MovingAverageIndicator(50),
+            VolumeIndicator(),
+            ATRIndicator(),
+        ]
+    )
     features = FeatureBuilder()
     return provider, engine, features
 
 
 def build_trade_pipeline() -> MultiTimeframeEngine:
     provider = YahooFinanceProvider()
-    engine = MarketDataEngine(indicators=[RSIIndicator(), MovingAverageIndicator(50), VolumeIndicator()])
+    engine = MarketDataEngine(
+        indicators=[
+            RSIIndicator(),
+            MovingAverageIndicator(50),
+            VolumeIndicator(),
+            ATRIndicator(),
+        ]
+    )
     features = FeatureBuilder()
     return MultiTimeframeEngine(provider, engine, features)
 
