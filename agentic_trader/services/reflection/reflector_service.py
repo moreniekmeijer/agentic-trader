@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from agentic_trader.agents.reflector.agent import ReflectorAgent
 from agentic_trader.controller.alpaca_controller import AlpacaController
-from agentic_trader.database.models import Decision, Trade, TradeJournal
+from agentic_trader.learning.journal import LearningJournal
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ class ReflectorService:
         self.session = session
         self.alpaca = alpaca
         self.agent = ReflectorAgent()
+        self.journal = LearningJournal(session)
 
     def run_reflection_cycle(self):
         """
@@ -21,14 +22,7 @@ class ReflectorService:
         """
         logger.info("Scanning for closed trades to reflect on...")
 
-        trades = (
-            self.session.query(Trade)
-            .filter(Trade.closed_at.isnot(None))
-            .filter(Trade.pnl.isnot(None))
-            .filter(Trade.needs_reconciliation.is_(False))
-            .filter(~Trade.id.in_(self.session.query(TradeJournal.trade_id)))
-            .all()
-        )
+        trades = self.journal.closed_trades_without_reflection()
 
         if not trades:
             logger.info("No new closed trades to reflect on.")
@@ -37,17 +31,8 @@ class ReflectorService:
         for trade in trades:
             logger.info(f"Reflecting on closed trade for {trade.symbol} (ID: {trade.id})")
 
-            # Fetch original decision reasoning
-            decision = None
-            if trade.decision_id:
-                decision = self.session.query(Decision).filter_by(id=trade.decision_id).first()
-
-            # Generate reflection via Agent
-            lesson = self.agent.reflect(trade, decision)
-
-            # Save to journal
-            journal = TradeJournal(trade_id=trade.id, symbol=trade.symbol, reflection=lesson)
-            self.session.add(journal)
+            lesson = self.agent.reflect(trade, trade.decision)
+            self.journal.record_reflection(trade, lesson)
             logger.info(f"Lesson learned for {trade.symbol}: {lesson}")
 
         self.session.commit()

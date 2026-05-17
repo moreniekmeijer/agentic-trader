@@ -43,8 +43,9 @@ Realized PNL: {trade.pnl}
 Original Reasoning:
 {reasons_text}
 
-Provide a concise, 1-2 sentence lesson learned from this trade. 
+Provide a concise, 1-2 sentence observation from this trade.
 If PNL is positive, what did we do right? If negative, what did we miss?
+Do not recommend code changes, automatic rule changes, or hidden strategy mutation.
 
 Provide your response as a JSON object matching this schema:
 {{

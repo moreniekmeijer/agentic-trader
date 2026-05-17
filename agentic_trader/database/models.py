@@ -250,6 +250,14 @@ class Decision(Base):
 
     executed: Mapped[bool] = mapped_column(Boolean, default=False)
     blocked_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # risk engine reden
+    thesis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    invalidation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    expected_horizon_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sector: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    setup_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    evidence: Mapped[list] = mapped_column(ARRAY(Text), default=list)
+    market_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     votes: Mapped[list[AgentVote]] = relationship("AgentVote", back_populates="decision")
     trade: Mapped[Optional[Trade]] = relationship("Trade", back_populates="decision", uselist=False)

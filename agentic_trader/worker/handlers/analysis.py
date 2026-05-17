@@ -5,12 +5,13 @@ from agentic_trader.agents.fundamental.agent import FundamentalsAgent
 from agentic_trader.agents.models import AggregatedResponse
 from agentic_trader.agents.sentiment.agent import SentimentAgent
 from agentic_trader.agents.technical.agent import TechnicalAgent
-from agentic_trader.database.models import FundamentalsData, TradeJournal
+from agentic_trader.database.models import FundamentalsData
 from agentic_trader.database.session import get_session
 from agentic_trader.decision.engine import DecisionEngine
 from agentic_trader.decision.portfolio_manager import PortfolioManager
 from agentic_trader.events.bus import EventBus
 from agentic_trader.events.models import BatchAnalysisRequestedEvent, SymbolAnalysisRequestedEvent
+from agentic_trader.learning.journal import LearningJournal
 from agentic_trader.scanner.models import CandidateReport
 from agentic_trader.services.fundamentals.models import FundamentalsSnapshot
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
@@ -81,14 +82,8 @@ async def handle_symbol_analysis(
             except Exception as exc:
                 logger.warning("Sentiment analysis skipped for %s: %s", event.symbol, exc)
 
-            journal_entries = (
-                session.query(TradeJournal)
-                .filter_by(symbol=event.symbol)
-                .order_by(TradeJournal.created_at.desc())
-                .limit(5)
-                .all()
-            )
-            past_lessons = [entry.reflection for entry in journal_entries]
+            learning = LearningJournal(session)
+            past_lessons = learning.recent_lessons(event.symbol, limit=5)
 
             aggregated = discussion_engine.discuss(
                 symbol=event.symbol,
@@ -132,6 +127,7 @@ async def handle_batch_analysis(
         sentiment_agent = SentimentAgent()
 
         with get_session() as session:
+            learning = LearningJournal(session)
             for symbol in event.symbols:
                 try:
                     df_daily = provider.get_bars(symbol, interval="1d")
@@ -175,16 +171,7 @@ async def handle_batch_analysis(
                         agent_responses=votes,
                     )
 
-                    journal_entries = (
-                        session.query(TradeJournal)
-                        .filter_by(symbol=symbol)
-                        .order_by(TradeJournal.created_at.desc())
-                        .limit(3)
-                        .all()
-                    )
-                    past_lessons_batch[symbol] = [
-                        entry.reflection for entry in journal_entries if entry.reflection
-                    ]
+                    past_lessons_batch[symbol] = learning.recent_lessons(symbol, limit=3)
                 except Exception as exc:
                     logger.warning("Skipping %s in batch due to error: %s", symbol, exc)
 
