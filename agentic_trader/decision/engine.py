@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import logging
-import os
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from agentic_trader.agents.models import AggregatedResponse
 from agentic_trader.database.models import Decision, OrderIntent
-from agentic_trader.database.repositories.broker import BrokerRepository
 from agentic_trader.database.repositories.order_intents import OrderIntentRepository
 from agentic_trader.database.repositories.trades import TradeRepository
 from agentic_trader.decision.bracket_policy import BracketPolicy
+from agentic_trader.execution.controls import (
+    auto_submit_order_intents_enabled,
+    broker_snapshot_max_age_seconds,
+)
 from agentic_trader.execution.executor import Executor
+from agentic_trader.execution.intent_submitter import (
+    BrokerSnapshotStale,
+    BrokerSubmissionsDisabled,
+    IntentSubmissionFailed,
+    IntentSubmitter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +35,12 @@ class DecisionEngine:
         self.session = session
         self.repo = TradeRepository(session)
         self.intent_repo = OrderIntentRepository(session)
-        self.broker_repo = BrokerRepository(session)
         self.executor = Executor(alpaca_controller)
+        self.intent_submitter = IntentSubmitter(
+            session=session,
+            alpaca_controller=alpaca_controller,
+            snapshot_max_age_seconds=broker_snapshot_max_age_seconds(),
+        )
         self.bracket_policy = BracketPolicy()
 
     # -----------------------------------------------------------------------
@@ -56,7 +67,7 @@ class DecisionEngine:
 
         intent = result
 
-        if not _auto_submit_order_intents():
+        if not auto_submit_order_intents_enabled():
             logger.info("%s: order intent %s is pending manual approval", response.symbol, intent.id)
             self.session.commit()
             return
@@ -94,7 +105,7 @@ class DecisionEngine:
                     "reasoning": decision.reasoning,
                 },
             )
-            if not _auto_submit_order_intents():
+            if not auto_submit_order_intents_enabled():
                 logger.info(
                     "%s: review order intent %s is pending manual approval",
                     symbol,
@@ -196,42 +207,13 @@ class DecisionEngine:
     # -----------------------------------------------------------------------
 
     def _submit_intent(self, intent: OrderIntent) -> None:
-        if not self._broker_snapshot_is_fresh():
-            self.intent_repo.mark_blocked(intent, "broker snapshot is stale")
-            self.session.commit()
-            return
-
         try:
-            self.intent_repo.mark_approved(intent)
-            order_result = self.executor.submit_intent(intent)
-            self.intent_repo.mark_submitted(intent, order_result)
-        except Exception as exc:
-            self.intent_repo.mark_failed(intent, str(exc))
+            self.intent_submitter.submit(intent)
+        except BrokerSubmissionsDisabled:
+            logger.warning("Broker submissions disabled; order intent %s remains pending", intent.id)
+        except BrokerSnapshotStale:
+            logger.warning("Order intent %s blocked because broker snapshot is stale", intent.id)
+        except IntentSubmissionFailed as exc:
             logger.error("Failed to submit order intent %s for %s: %s", intent.id, intent.symbol, exc)
-            self.session.commit()
-            return
 
         self.session.commit()
-
-    def _broker_snapshot_is_fresh(self) -> bool:
-        latest = self.broker_repo.latest_snapshot()
-        if latest is None:
-            return False
-
-        fetched_at = latest.fetched_at
-        if fetched_at.tzinfo is None:
-            fetched_at = fetched_at.replace(tzinfo=timezone.utc)
-        age_seconds = (datetime.now(timezone.utc) - fetched_at).total_seconds()
-
-        return age_seconds <= _broker_snapshot_max_age_seconds()
-
-
-def _auto_submit_order_intents() -> bool:
-    return os.getenv("ORDER_INTENT_AUTO_SUBMIT", "false").lower() in {"1", "true", "yes"}
-
-
-def _broker_snapshot_max_age_seconds() -> int:
-    try:
-        return int(os.getenv("BROKER_SNAPSHOT_MAX_AGE_SECONDS", "300"))
-    except ValueError:
-        return 300

@@ -1,31 +1,9 @@
 from datetime import datetime
-from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
-class WatchlistCreate(BaseModel):
-    model_config = {"from_attributes": True}
-
-    symbol: str
-    thesis: str
-    invalidation: str
-    added_by: str | None = "manual"
-    horizon: str | None = "medium"
-    review_after: datetime | None = None
-
-
-class WatchlistResponse(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    symbol: str
-    added_at: datetime
-    added_by: str
-    thesis: str
-    invalidation: str
-    horizon: str
-    review_after: datetime | None
+from agentic_trader.execution.controls import broker_mode as _broker_mode
+from agentic_trader.execution.controls import broker_submissions_enabled as _broker_submissions_enabled
 
 
 class AgentVoteResponse(BaseModel):
@@ -35,7 +13,7 @@ class AgentVoteResponse(BaseModel):
     signal: str
     confidence: float
     weight: float
-    reasoning: List[str]
+    reasoning: list[str]
 
 
 class DecisionResponse(BaseModel):
@@ -46,10 +24,17 @@ class DecisionResponse(BaseModel):
     timestamp: datetime
     signal: str
     confidence: float
-    reasoning: List[str]
+    reasoning: list[str]
     executed: bool
     blocked_reason: str | None
-    votes: List[AgentVoteResponse]
+    thesis: str | None
+    invalidation: str | None
+    expected_horizon_days: int | None
+    sector: str | None
+    setup_type: str | None
+    evidence: list[str]
+    market_snapshot: dict | None
+    votes: list[AgentVoteResponse]
 
 
 class TradeResponse(BaseModel):
@@ -66,12 +51,15 @@ class TradeResponse(BaseModel):
     close_price: float | None
     pnl: float | None
     pnl_pct: float | None
+    needs_reconciliation: bool
+    reconciliation_reason: str | None
     decision_id: int | None
 
 
 class BrokerSnapshotResponse(BaseModel):
     model_config = {"from_attributes": True}
 
+    broker_mode: str = Field(default_factory=_broker_mode)
     id: int
     fetched_at: datetime
     account_id: str | None
@@ -91,6 +79,8 @@ class BrokerSnapshotResponse(BaseModel):
 class OrderLifecycleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
+    broker_mode: str = Field(default_factory=_broker_mode)
+    broker_submissions_enabled: bool = Field(default_factory=_broker_submissions_enabled)
     id: int
     broker_order_id: str
     client_order_id: str | None
@@ -112,6 +102,7 @@ class OrderLifecycleResponse(BaseModel):
 class PositionLifecycleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
+    broker_mode: str = Field(default_factory=_broker_mode)
     id: int
     symbol: str
     status: str
@@ -129,10 +120,46 @@ class PositionLifecycleResponse(BaseModel):
     last_broker_seen_at: datetime
 
 
-class AgentPerformanceResponse(BaseModel):
+class OrderIntentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
-    agent: str
-    signal: str
-    count: int
-    total_pnl: float
+    id: int
+    created_at: datetime
+    symbol: str
+    side: str
+    qty: float | None
+    order_type: str
+    status: str
+    rationale: str | None
+    client_order_id: str | None
+    submitted_at: datetime | None
+    broker_order_id: str | None
+    error: str | None
+    data: dict | None
+    broker_mode: str
+    broker_submissions_enabled: bool
+
+
+class OrderIntentSubmissionResponse(BaseModel):
+    intent: OrderIntentResponse
+
+
+class ExecutionControlStatus(BaseModel):
+    broker_mode: str
+    paper_trading: bool
+    broker_submissions_enabled: bool
+    kill_switch_enabled: bool
+    order_intent_auto_submit: bool
+
+
+class KillSwitchRequest(BaseModel):
+    enabled: bool
+
+
+class LifecycleMismatchResponse(BaseModel):
+    source: str
+    source_id: int
+    symbol: str | None
+    status: str | None = None
+    reason: str
+    detected_at: datetime | None = None

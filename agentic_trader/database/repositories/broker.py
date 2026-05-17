@@ -10,6 +10,8 @@ from agentic_trader.database.models import BrokerSnapshotRecord, OrderLifecycle,
 
 logger = logging.getLogger(__name__)
 
+OPEN_ORDER_STATUSES = {"accepted", "held", "new", "open", "partially_filled", "pending_new"}
+
 
 class BrokerRepository:
     def __init__(self, session: Session):
@@ -58,11 +60,29 @@ class BrokerRepository:
             self.session.query(BrokerSnapshotRecord).order_by(BrokerSnapshotRecord.fetched_at.desc()).first()
         )
 
-    def list_order_lifecycles(self, symbol: str | None = None, limit: int = 100) -> list[OrderLifecycle]:
+    def list_order_lifecycles(
+        self,
+        symbol: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[OrderLifecycle]:
         query = self.session.query(OrderLifecycle).order_by(OrderLifecycle.last_seen_at.desc())
         if symbol:
             query = query.filter(OrderLifecycle.symbol == symbol.upper())
+        if status:
+            query = query.filter(OrderLifecycle.status == status.lower())
         return list(query.limit(limit).all())
+
+    def list_open_order_lifecycles(
+        self,
+        symbol: str | None = None,
+        limit: int = 100,
+    ) -> list[OrderLifecycle]:
+        query = self.session.query(OrderLifecycle).filter(OrderLifecycle.status.in_(OPEN_ORDER_STATUSES))
+        if symbol:
+            query = query.filter(OrderLifecycle.symbol == symbol.upper())
+
+        return list(query.order_by(OrderLifecycle.last_seen_at.desc()).limit(limit).all())
 
     def list_position_lifecycles(self, status: str | None = None) -> list[PositionLifecycle]:
         query = self.session.query(PositionLifecycle).order_by(PositionLifecycle.last_broker_seen_at.desc())

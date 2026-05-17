@@ -16,6 +16,8 @@ from alpaca.trading.requests import (
     TakeProfitRequest,
 )
 
+from agentic_trader.execution.controls import paper_trading_enabled
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +31,9 @@ class AlpacaController:
         if not self.api_key or not self.secret_key:
             raise ValueError("Missing Alpaca API credentials")
 
-        self.client = TradingClient(api_key=self.api_key, secret_key=self.secret_key, paper=True)
+        self.paper = paper_trading_enabled()
+        self.base_url = "https://paper-api.alpaca.markets" if self.paper else "https://api.alpaca.markets"
+        self.client = TradingClient(api_key=self.api_key, secret_key=self.secret_key, paper=self.paper)
 
     def get_account(self):
         return self.client.get_account()
@@ -101,7 +105,7 @@ class AlpacaController:
         if after is not None:
             query["after"] = after.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        url = "https://paper-api.alpaca.markets/v2/account/activities/FILL"
+        url = f"{self.base_url}/v2/account/activities/FILL"
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
 
