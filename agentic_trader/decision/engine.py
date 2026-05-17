@@ -54,14 +54,14 @@ class DecisionEngine:
             self.session.commit()
             return
 
-        intent, intended_price = result
+        intent = result
 
         if not _auto_submit_order_intents():
             logger.info("%s: order intent %s is pending manual approval", response.symbol, intent.id)
             self.session.commit()
             return
 
-        self._submit_intent(decision, response, intent, intended_price)
+        self._submit_intent(intent)
 
     def execute_review_decision(self, decision, symbol: str) -> None:
         """
@@ -70,7 +70,7 @@ class DecisionEngine:
         logger.info(f"DecisionEngine received review for {symbol}: {decision.action}")
 
         if decision.action in {"EXIT", "CLOSE_EARLY", "REDUCE"}:
-            qty = self.executor.alpaca.get_available_qty(symbol)
+            qty = self.executor.available_qty(symbol)
             if decision.action == "REDUCE":
                 qty = qty / 2
             if qty <= 0:
@@ -103,7 +103,7 @@ class DecisionEngine:
                 self.session.commit()
                 return
 
-            self._submit_review_intent(symbol, intent)
+            self._submit_intent(intent)
         elif decision.action == "TIGHTEN_STOP":
             logger.info(
                 "%s: TIGHTEN_STOP recorded by position review; broker stop amendment is not implemented yet.",
@@ -121,7 +121,7 @@ class DecisionEngine:
         self,
         decision: Decision,
         response: AggregatedResponse,
-    ) -> tuple[OrderIntent, float | None] | None:
+    ) -> OrderIntent | None:
         symbol = response.symbol
 
         # Check for open orders first to avoid "insufficient qty" errors
@@ -172,10 +172,10 @@ class DecisionEngine:
                     "expected_horizon_days": response.expected_horizon_days,
                 },
             )
-            return intent, bracket.plan.entry_price
+            return intent
 
         if response.signal in {"SELL", "EXIT"}:
-            qty = self.executor.alpaca.get_available_qty(symbol)
+            qty = self.executor.available_qty(symbol)
             if qty <= 0:
                 logger.info(f"{symbol}: no available position to sell")
                 return None
@@ -187,7 +187,7 @@ class DecisionEngine:
                 rationale="; ".join(response.reasoning),
                 data={"validated": True, "decision_id": decision.id},
             )
-            return intent, None
+            return intent
 
         return None
 
@@ -195,13 +195,7 @@ class DecisionEngine:
     # INTENT SUBMISSION AND PERSISTENCE
     # -----------------------------------------------------------------------
 
-    def _submit_intent(
-        self,
-        decision: Decision,
-        response: AggregatedResponse,
-        intent: OrderIntent,
-        intended_price: float | None,
-    ) -> None:
+    def _submit_intent(self, intent: OrderIntent) -> None:
         if not self._broker_snapshot_is_fresh():
             self.intent_repo.mark_blocked(intent, "broker snapshot is stale")
             self.session.commit()
@@ -217,38 +211,6 @@ class DecisionEngine:
             self.session.commit()
             return
 
-        self._persist_trade(decision, response, order_result, intent.qty, intended_price)
-
-    def _submit_review_intent(self, symbol: str, intent: OrderIntent) -> None:
-        if not self._broker_snapshot_is_fresh():
-            self.intent_repo.mark_blocked(intent, "broker snapshot is stale")
-            self.session.commit()
-            return
-
-        try:
-            self.intent_repo.mark_approved(intent)
-            order = self.executor.submit_intent(intent)
-            self.intent_repo.mark_submitted(intent, order)
-            self.repo.record_close_order_submitted(symbol, order)
-            self.session.commit()
-        except Exception as exc:
-            self.intent_repo.mark_failed(intent, str(exc))
-            logger.error("Failed to submit review order intent %s for %s: %s", intent.id, symbol, exc)
-            self.session.commit()
-
-    def _persist_trade(self, decision, response, order_result, qty, intended_price) -> None:
-        if qty is None:
-            logger.warning("Order result for %s had no intent quantity; trade not saved", decision.symbol)
-            return
-
-        self.repo.mark_executed(
-            decision,
-            order_result=order_result,
-            side=_trade_side(response.signal),
-            qty=qty,
-            intended_price=intended_price,
-        )
-
         self.session.commit()
 
     def _broker_snapshot_is_fresh(self) -> bool:
@@ -262,12 +224,6 @@ class DecisionEngine:
         age_seconds = (datetime.now(timezone.utc) - fetched_at).total_seconds()
 
         return age_seconds <= _broker_snapshot_max_age_seconds()
-
-
-def _trade_side(signal: str) -> str:
-    if signal in {"SELL", "EXIT", "REDUCE"}:
-        return "sell"
-    return "buy"
 
 
 def _auto_submit_order_intents() -> bool:

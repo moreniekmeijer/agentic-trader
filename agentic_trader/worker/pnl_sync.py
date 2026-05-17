@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from agentic_trader.broker.mapper import to_broker_fill
 from agentic_trader.broker.models import BrokerFill
 from agentic_trader.controller.alpaca_controller import AlpacaController
-from agentic_trader.database.models import Trade
+from agentic_trader.database.models import Decision, OrderIntent, Trade
 from agentic_trader.database.repositories.trades import TradeRepository
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class AggregatedFill(BaseModel):
     order_id: str
+    client_order_id: str | None = None
     symbol: str
     side: str
     qty: float
@@ -90,9 +91,14 @@ class FillPnLSync:
                 (fill.transaction_time for fill in order_fills if fill.transaction_time),
                 default=None,
             )
+            client_order_id = next(
+                (fill.client_order_id for fill in order_fills if fill.client_order_id),
+                None,
+            )
             aggregated.append(
                 AggregatedFill(
                     order_id=order_id,
+                    client_order_id=client_order_id,
                     symbol=symbol,
                     side=side,
                     qty=qty,
@@ -104,6 +110,8 @@ class FillPnLSync:
         return sorted(aggregated, key=_fill_sort_key)
 
     def _upsert_trade_from_fill(self, fill: AggregatedFill) -> Trade:
+        intent = self._intent_for_fill(fill)
+        decision_id = self._decision_id_for_intent(intent)
         trade = self.session.query(Trade).filter_by(alpaca_order_id=fill.order_id).first()
         was_processed_sell = trade is not None and trade.side == "sell" and trade.closed_at is not None
         if trade is None:
@@ -114,6 +122,7 @@ class FillPnLSync:
                 price=fill.price,
                 alpaca_order_id=fill.order_id,
                 timestamp=fill.transaction_time or datetime.now(timezone.utc),
+                decision_id=decision_id,
             )
             self.session.add(trade)
         else:
@@ -123,10 +132,14 @@ class FillPnLSync:
             trade.price = fill.price
             if fill.transaction_time is not None:
                 trade.timestamp = fill.transaction_time
+            if trade.decision_id is None:
+                trade.decision_id = decision_id
 
         if not was_processed_sell:
             trade.needs_reconciliation = False
             trade.reconciliation_reason = None
+        if decision_id is not None:
+            self._mark_decision_executed(decision_id)
         return trade
 
     def _apply_sell_fill(self, sell_trade: Trade, fill: AggregatedFill) -> int:
@@ -170,6 +183,31 @@ class FillPnLSync:
         trade.needs_reconciliation = True
         trade.reconciliation_reason = reason
         logger.warning("Trade %s needs reconciliation: %s", trade.id, reason)
+
+    def _intent_for_fill(self, fill: AggregatedFill) -> OrderIntent | None:
+        intent = self.session.query(OrderIntent).filter_by(broker_order_id=fill.order_id).first()
+        if intent is not None or fill.client_order_id is None:
+            return intent
+
+        return self.session.query(OrderIntent).filter_by(client_order_id=fill.client_order_id).first()
+
+    def _decision_id_for_intent(self, intent: OrderIntent | None) -> int | None:
+        if intent is None or not intent.data:
+            return None
+
+        raw_decision_id = intent.data.get("decision_id")
+        if raw_decision_id is None:
+            return None
+
+        try:
+            return int(raw_decision_id)
+        except (TypeError, ValueError):
+            return None
+
+    def _mark_decision_executed(self, decision_id: int) -> None:
+        decision = self.session.query(Decision).filter_by(id=decision_id).first()
+        if decision is not None:
+            decision.executed = True
 
 
 def _fill_sort_key(fill: AggregatedFill) -> tuple[datetime, str]:

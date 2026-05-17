@@ -14,6 +14,9 @@ class Executor:
     def has_open_orders(self, symbol: str) -> bool:
         return self.alpaca.has_open_orders(symbol)
 
+    def available_qty(self, symbol: str) -> float:
+        return self.alpaca.get_available_qty(symbol)
+
     def place_bracket_buy(
         self,
         *,
@@ -41,7 +44,7 @@ class Executor:
         qty: float | None = None,
         client_order_id: str | None = None,
     ) -> tuple[Any, float] | None:
-        available_qty = self.alpaca.get_available_qty(symbol)
+        available_qty = self.available_qty(symbol)
         if available_qty <= 0:
             return None
 
