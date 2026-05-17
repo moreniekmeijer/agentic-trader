@@ -116,15 +116,19 @@ class AlpacaController:
 
         return [activity for activity in payload if isinstance(activity, dict)]
 
-    def sell(self, symbol: str, qty: float):
+    def sell(self, symbol: str, qty: float, client_order_id: str | None = None):
         """Helper to place a simple market sell order."""
         try:
-            order = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=OrderSide.SELL,
-                time_in_force=TimeInForce.DAY,
-            )
+            order_args = {
+                "symbol": symbol,
+                "qty": qty,
+                "side": OrderSide.SELL,
+                "time_in_force": TimeInForce.DAY,
+            }
+            if client_order_id:
+                order_args["client_order_id"] = client_order_id
+
+            order = MarketOrderRequest(**order_args)
             return self.client.submit_order(order)
         except Exception as exc:
             logger.error("Sell failed for %s: %s", symbol, exc, exc_info=True)
@@ -138,18 +142,23 @@ class AlpacaController:
         limit_price: float,
         stop_loss_price: float,
         take_profit_price: float,
+        client_order_id: str | None = None,
     ):
         try:
-            order = LimitOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
-                time_in_force=TimeInForce.GTC,
-                limit_price=limit_price,
-                order_class=OrderClass.BRACKET,
-                take_profit=TakeProfitRequest(limit_price=take_profit_price),
-                stop_loss=StopLossRequest(stop_price=stop_loss_price),
-            )
+            order_args = {
+                "symbol": symbol,
+                "qty": qty,
+                "side": OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                "time_in_force": TimeInForce.GTC,
+                "limit_price": limit_price,
+                "order_class": OrderClass.BRACKET,
+                "take_profit": TakeProfitRequest(limit_price=take_profit_price),
+                "stop_loss": StopLossRequest(stop_price=stop_loss_price),
+            }
+            if client_order_id:
+                order_args["client_order_id"] = client_order_id
+
+            order = LimitOrderRequest(**order_args)
             response = self.client.submit_order(order)
             return response
         except Exception as exc:

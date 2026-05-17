@@ -182,6 +182,21 @@ class PositionLifecycle(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
 
+class PositionReviewRecord(Base):
+    """Accepted or rejected de-risking review for an open position."""
+
+    __tablename__ = "position_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reasoning: Mapped[list] = mapped_column(ARRAY(Text))
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Agent votes
 # ---------------------------------------------------------------------------
@@ -268,6 +283,8 @@ class Trade(Base):
     close_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    needs_reconciliation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reconciliation_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     decision_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("decisions.id"), nullable=True, index=True

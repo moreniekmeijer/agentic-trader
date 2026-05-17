@@ -106,8 +106,9 @@ class TradeRepository:
         self,
         trade: Trade,
         close_price: float,
+        closed_at: datetime | None = None,
     ) -> None:
-        trade.closed_at = datetime.now(timezone.utc)
+        trade.closed_at = closed_at or datetime.now(timezone.utc)
         trade.close_price = close_price
 
         assert trade.price is not None

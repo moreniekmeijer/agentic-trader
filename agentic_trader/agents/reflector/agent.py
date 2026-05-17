@@ -19,14 +19,15 @@ class ReflectorAgent:
     """
     Analyzes closed trades to extract lessons for the Synthesizer.
     """
+
     def __init__(self, model: str = "llama-3.3-70b-versatile"):
         self.client = Groq()
         self.model = model
 
     def reflect(self, trade: Trade, decision: Optional[Decision]) -> str:
-        if not trade.pnl:
+        if trade.closed_at is None or trade.pnl is None or trade.needs_reconciliation:
             return "Trade not yet closed or no PNL available."
-        
+
         reasons_text = ""
         if decision and decision.reasoning:
             reasons_text = "\n- ".join(decision.reasoning)
@@ -57,7 +58,13 @@ Provide your response as a JSON object matching this schema:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a concise financial reflection AI. You must ONLY output valid JSON."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a concise financial reflection AI. "
+                            "You must ONLY output valid JSON."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
@@ -65,7 +72,7 @@ Provide your response as a JSON object matching this schema:
             raw_response = completion.choices[0].message.content
             result_data = json.loads(raw_response)
             result = ReflectionResult(**result_data)
-            
+
             return result.lesson
 
         except Exception as e:
