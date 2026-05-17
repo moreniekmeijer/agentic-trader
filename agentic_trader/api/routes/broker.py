@@ -13,7 +13,8 @@ router = APIRouter(tags=["broker"])
 
 
 @router.get("/broker/snapshot", response_model=BrokerSnapshotResponse)
-def get_broker_snapshot(session: Session = Depends(get_db)):
+def get_latest_broker_snapshot(session: Session = Depends(get_db)):
+    """Return the latest persisted broker snapshot, not a live Alpaca read."""
     repo = BrokerRepository(session)
     snapshot = repo.latest_snapshot()
     if snapshot is None:
@@ -22,13 +23,21 @@ def get_broker_snapshot(session: Session = Depends(get_db)):
     return snapshot
 
 
-@router.get("/orders", response_model=list[OrderLifecycleResponse])
-def get_orders(symbol: str | None = None, limit: int = 100, session: Session = Depends(get_db)):
+@router.get("/broker/orders", response_model=list[OrderLifecycleResponse])
+@router.get("/orders", response_model=list[OrderLifecycleResponse], include_in_schema=False)
+def get_order_lifecycles(
+    symbol: str | None = None,
+    limit: int = 100,
+    session: Session = Depends(get_db),
+):
+    """Return persisted broker order lifecycle rows, not live open orders."""
     repo = BrokerRepository(session)
     return repo.list_order_lifecycles(symbol=symbol, limit=limit)
 
 
-@router.get("/positions", response_model=list[PositionLifecycleResponse])
-def get_positions(status: str | None = None, session: Session = Depends(get_db)):
+@router.get("/broker/positions", response_model=list[PositionLifecycleResponse])
+@router.get("/positions", response_model=list[PositionLifecycleResponse], include_in_schema=False)
+def get_position_lifecycles(status: str | None = None, session: Session = Depends(get_db)):
+    """Return persisted broker position lifecycle rows, not live Alpaca positions."""
     repo = BrokerRepository(session)
     return repo.list_position_lifecycles(status=status)

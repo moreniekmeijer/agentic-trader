@@ -5,13 +5,8 @@ import logging
 from sqlalchemy.orm import Session
 
 from agentic_trader.agents.models import AggregatedResponse
-from agentic_trader.database.mapper import (
-    mark_decision_blocked,
-    mark_decision_executed,
-    to_trade,
-)
-from agentic_trader.database.models import Trade
 from agentic_trader.database.repositories.trades import TradeRepository
+from agentic_trader.execution.executor import Executor
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +18,10 @@ class DecisionEngine:
         risk_engine,
         session: Session,
     ):
-        self.alpaca = alpaca_controller
         self.risk = risk_engine
         self.session = session
         self.repo = TradeRepository(session)
+        self.executor = Executor(alpaca_controller)
 
     # -----------------------------------------------------------------------
     # MAIN FLOW
@@ -38,7 +33,7 @@ class DecisionEngine:
         verdict = self.risk.can_trade(response)
 
         if not verdict.allowed:
-            mark_decision_blocked(decision, verdict.reason or "unknown")
+            self.repo.mark_blocked(decision, verdict.reason or "unknown")
             logger.info(f"Risk blocked {response.symbol}: {verdict.reason}")
             self.session.commit()
             return
@@ -63,25 +58,15 @@ class DecisionEngine:
         if decision.action == "CLOSE_EARLY":
             logger.info(f"{symbol}: PortfolioAgent chose to CLOSE_EARLY. Executing market order to exit...")
             try:
-                # Alpaca will cancel associated OCO bracket legs automatically when position is closed
-                order = self.alpaca.close_position(symbol)
+                order = self.executor.close_position(symbol)
                 order_id = getattr(order, "id", "unknown")
                 logger.info(
                     f"{symbol}: Successfully closed position manually. Order ID: {order_id}"
                 )
-
-                # Update Trade in DB
-                trade = (
-                    self.session.query(Trade)
-                    .filter_by(symbol=symbol, side="buy")
-                    .order_by(Trade.timestamp.desc())
-                    .first()
-                )
-                if trade:
-                    # Logic for manual close status update can be added here
-                    pass
-            except Exception as e:
-                logger.error(f"Failed to execute manual close for {symbol}: {e}")
+                self.repo.record_close_order_submitted(symbol, order)
+                self.session.commit()
+            except Exception as exc:
+                logger.error(f"Failed to execute manual close for {symbol}: {exc}")
         else:
             logger.info(f"{symbol}: Action is HOLD. Doing nothing.")
             return
@@ -94,7 +79,7 @@ class DecisionEngine:
         symbol = response.symbol
 
         # Check for open orders first to avoid "insufficient qty" errors
-        if self.alpaca.has_open_orders(symbol):
+        if self.executor.has_open_orders(symbol):
             logger.info(f"{symbol}: already has open orders, skipping")
             return None
 
@@ -115,10 +100,9 @@ class DecisionEngine:
                 logger.info(f"{symbol}: no qty allowed")
                 return None
 
-            order = self.alpaca.place_bracket_order(
+            order = self.executor.place_bracket_buy(
                 symbol=symbol,
                 qty=qty,
-                side="buy",
                 limit_price=response.entry_price,
                 stop_loss_price=response.stop_loss_price,
                 take_profit_price=response.take_profit_price,
@@ -126,11 +110,11 @@ class DecisionEngine:
             return order, qty
 
         if response.signal == "SELL":
-            qty = self.alpaca.get_available_qty(symbol)
-            if qty <= 0:
+            result = self.executor.sell_available_position(symbol)
+            if result is None:
                 logger.info(f"{symbol}: no available position to sell")
                 return None
-            return self.alpaca.sell(symbol, qty), qty
+            return result
 
         return None
 
@@ -139,18 +123,12 @@ class DecisionEngine:
     # -----------------------------------------------------------------------
 
     def _persist_trade(self, decision, response, order_result, qty) -> None:
-        trade = to_trade(
-            symbol=response.symbol,
+        self.repo.mark_executed(
+            decision,
+            order_result=order_result,
             side=response.signal.lower(),
             qty=qty,
-            order=order_result,
-            decision_id=decision.id,
             intended_price=getattr(response, "entry_price", None),
         )
 
-        self.session.add(trade)
-        mark_decision_executed(decision)
-
         self.session.commit()
-
-        logger.info(f"Trade saved: {response.signal} {trade.qty} {response.symbol} @ {trade.price}")

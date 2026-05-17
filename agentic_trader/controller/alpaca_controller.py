@@ -6,7 +6,6 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
-from alpaca.data.historical.news import NewsClient
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
 from alpaca.trading.requests import (
@@ -21,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class AlpacaController:
+    """Live Alpaca broker adapter for account reads and order operations."""
+
     def __init__(self):
         self.api_key = os.getenv("ALPACA_API_KEY")
         self.secret_key = os.getenv("ALPACA_SECRET_KEY")
@@ -29,7 +30,6 @@ class AlpacaController:
             raise ValueError("Missing Alpaca API credentials")
 
         self.client = TradingClient(api_key=self.api_key, secret_key=self.secret_key, paper=True)
-        self.news_client = NewsClient(api_key=self.api_key, secret_key=self.secret_key)
 
     def get_account(self):
         return self.client.get_account()
@@ -50,8 +50,8 @@ class AlpacaController:
                 if pos.symbol == symbol:
                     return float(pos.qty)
             return 0.0
-        except Exception as e:
-            print(f"Error fetching positions: {e}")
+        except Exception as exc:
+            logger.warning("Error fetching position for %s: %s", symbol, exc)
             return 0.0
 
     def get_available_qty(self, symbol: str) -> float:
@@ -61,21 +61,21 @@ class AlpacaController:
                 if pos.symbol == symbol:
                     return float(pos.qty_available)
             return 0.0
-        except Exception as e:
-            print(f"Error fetching available qty: {e}")
+        except Exception as exc:
+            logger.warning("Error fetching available quantity for %s: %s", symbol, exc)
             return 0.0
 
     def has_open_orders(self, symbol: str) -> bool:
         try:
             orders = self.get_orders()
             for order in orders:
-                # Use string comparison to be safe across different Enum types
-                status = str(order.status).lower()
+                status = getattr(order.status, "value", order.status)
+                status = str(status).lower()
                 if order.symbol == symbol and status in ["open", "held", "new", "partially_filled"]:
                     return True
             return False
-        except Exception as e:
-            print(f"Error checking open orders: {e}")
+        except Exception as exc:
+            logger.warning("Error checking open orders for %s: %s", symbol, exc)
             return False
 
     def get_orders(self, status: QueryOrderStatus | None = None, limit: int | None = None):
@@ -126,8 +126,8 @@ class AlpacaController:
                 time_in_force=TimeInForce.DAY,
             )
             return self.client.submit_order(order)
-        except Exception as e:
-            print(f"[ERROR] Sell failed: {e}")
+        except Exception as exc:
+            logger.error("Sell failed for %s: %s", symbol, exc, exc_info=True)
             raise
 
     def place_bracket_order(
@@ -152,8 +152,8 @@ class AlpacaController:
             )
             response = self.client.submit_order(order)
             return response
-        except Exception as e:
-            print(f"[ERROR] Bracket Order failed: {e}")
+        except Exception as exc:
+            logger.error("Bracket order failed for %s: %s", symbol, exc, exc_info=True)
             raise
 
     def get_news(self, symbol: str, limit: int = 5):
@@ -177,16 +177,16 @@ class AlpacaController:
                 }
                 for a in articles
             ]
-        except Exception as e:
-            print(f"[ERROR] Direct news fetch failed for {symbol}: {e}")
+        except Exception as exc:
+            logger.warning("Direct news fetch failed for %s: %s", symbol, exc)
             return []
 
     def close_position(self, symbol: str):
         try:
             response = self.client.close_position(symbol_or_asset_id=symbol)
             return response
-        except Exception as e:
-            print(f"[ERROR] Failed to close position for {symbol}: {e}")
+        except Exception as exc:
+            logger.error("Failed to close position for %s: %s", symbol, exc, exc_info=True)
             raise
 
     def _get_json(self, url: str) -> Any:
