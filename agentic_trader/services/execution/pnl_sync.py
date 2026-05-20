@@ -140,7 +140,26 @@ class FillPnLSync:
             trade.reconciliation_reason = None
         if decision_id is not None:
             self._mark_decision_executed(decision_id)
+            if fill.side == "buy":
+                self._update_position_meta(fill.symbol, decision_id)
         return trade
+
+    def _update_position_meta(self, symbol: str, decision_id: int) -> None:
+        decision = self.session.query(Decision).filter_by(id=decision_id).first()
+        if not decision:
+            return
+
+        from agentic_trader.database.models import PositionMeta
+
+        meta = self.session.query(PositionMeta).filter_by(symbol=symbol.upper()).first()
+        if not meta:
+            meta = PositionMeta(symbol=symbol.upper())
+            self.session.add(meta)
+
+        meta.decision_id = decision_id
+        meta.thesis = decision.thesis
+        meta.invalidation = decision.invalidation
+        meta.expected_horizon_days = decision.expected_horizon_days
 
     def _apply_sell_fill(self, sell_trade: Trade, fill: AggregatedFill) -> int:
         sell_trade.closed_at = fill.transaction_time or datetime.now(timezone.utc)

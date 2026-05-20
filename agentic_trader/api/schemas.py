@@ -99,25 +99,7 @@ class OrderLifecycleResponse(BaseModel):
     last_seen_at: datetime
 
 
-class PositionLifecycleResponse(BaseModel):
-    model_config = {"from_attributes": True}
 
-    broker_mode: str = Field(default_factory=_broker_mode)
-    id: int
-    symbol: str
-    status: str
-    opened_at: datetime | None
-    closed_at: datetime | None
-    qty: float
-    avg_entry_price: float | None
-    market_value: float | None
-    current_price: float | None
-    unrealized_pl: float | None
-    unrealized_plpc: float | None
-    thesis: str | None
-    invalidation: str | None
-    expected_horizon_days: int | None
-    last_broker_seen_at: datetime
 
 
 class OrderIntentResponse(BaseModel):

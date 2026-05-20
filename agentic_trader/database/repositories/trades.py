@@ -66,6 +66,14 @@ class TradeRepository:
         trade.pnl_pct = (close_price - trade.price) / trade.price
         logger.info("Trade closed: %s PnL=%.2f (%.1f%%)", trade.symbol, trade.pnl, trade.pnl_pct * 100)
 
+    def get_last_buy_decision(self, symbol: str) -> Decision | None:
+        return (
+            self.session.query(Decision)
+            .filter_by(symbol=symbol, signal="BUY")
+            .order_by(Decision.timestamp.desc())
+            .first()
+        )
+
 
 def _extract_sector(market_snapshot: dict | None) -> str | None:
     if not market_snapshot:

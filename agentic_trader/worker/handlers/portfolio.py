@@ -10,8 +10,8 @@ from agentic_trader.services.market_data.providers.yahoo_finance import YahooFin
 from agentic_trader.services.reflection.reflector_service import ReflectorService
 from agentic_trader.worker.context import WorkerContext
 from agentic_trader.worker.factories import build_portfolio_agent
-from agentic_trader.worker.pnl_sync import FillPnLSync
-from agentic_trader.worker.position_review import PositionReviewService
+from agentic_trader.services.execution.pnl_sync import FillPnLSync
+from agentic_trader.services.portfolio.position_review import PositionReviewService
 
 logger = logging.getLogger(__name__)
 

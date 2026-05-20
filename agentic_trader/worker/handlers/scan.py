@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from agentic_trader.database.models import FundamentalsData, MarketState
+from agentic_trader.database.repositories.market_state import MarketStateRepository
 from agentic_trader.database.session import get_session
 from agentic_trader.events.bus import EventBus
 from agentic_trader.events.models import (
@@ -35,12 +35,8 @@ async def handle_scan_triggered(event: ScanTriggeredEvent, bus: EventBus, contex
     logger.info("Scan complete - shortlist: %s", top_symbols)
 
     with get_session() as session:
-        state = session.query(MarketState).filter_by(key="active_shortlist").first()
-        if not state:
-            state = MarketState(key="active_shortlist", symbols=top_symbols)
-            session.add(state)
-        else:
-            state.symbols = top_symbols
+        repo = MarketStateRepository(session)
+        repo.set_active_shortlist(top_symbols)
         session.commit()
 
     await bus.publish(ScanCompletedEvent(timestamp=datetime.now(timezone.utc), symbols=top_symbols))
@@ -48,8 +44,9 @@ async def handle_scan_triggered(event: ScanTriggeredEvent, bus: EventBus, contex
 
 async def handle_scan_completed(event: ScanCompletedEvent, bus: EventBus) -> None:
     with get_session() as session:
+        repo = MarketStateRepository(session)
         symbols_to_refresh = [
-            symbol for symbol in event.symbols if _fundamentals_are_stale(session, symbol)
+            symbol for symbol in event.symbols if repo.fundamentals_are_stale(symbol)
         ]
 
     for symbol in symbols_to_refresh:
@@ -71,24 +68,11 @@ async def handle_fundamentals_requested(event: FundamentalsRequestedEvent, bus: 
     snapshot = snapshots[event.symbol]
 
     with get_session() as session:
-        fd = session.query(FundamentalsData).filter_by(symbol=event.symbol).first()
-        if not fd:
-            fd = FundamentalsData(symbol=event.symbol, data=snapshot.model_dump(mode="json"))
-            session.add(fd)
-        else:
-            fd.data = snapshot.model_dump(mode="json")
+        repo = MarketStateRepository(session)
+        repo.save_fundamentals(event.symbol, snapshot.model_dump(mode="json"))
         session.commit()
 
     logger.info("Saved fundamentals for %s.", event.symbol)
 
 
-def _fundamentals_are_stale(session, symbol: str) -> bool:
-    record = session.query(FundamentalsData).filter_by(symbol=symbol).first()
-    if record is None or record.updated_at is None:
-        return True
 
-    updated_at = record.updated_at
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=timezone.utc)
-
-    return datetime.now(timezone.utc) - updated_at >= timedelta(days=7)

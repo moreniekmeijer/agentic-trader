@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from agentic_trader.broker.models import BrokerOrder, BrokerPosition, BrokerSnapshot
-from agentic_trader.database.models import BrokerSnapshotRecord, OrderLifecycle, PositionLifecycle
+from agentic_trader.database.models import BrokerSnapshotRecord, OrderLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class BrokerRepository:
         for order in orders_by_id.values():
             self.upsert_order_lifecycle(order, seen_at=snapshot.fetched_at)
 
-        self.sync_position_lifecycles(snapshot.positions, seen_at=snapshot.fetched_at)
+        # Removed sync_position_lifecycles since live Alpaca position is the source of truth
 
         logger.info(
             "Broker snapshot persisted: id=%s positions=%d open_orders=%d",
@@ -84,11 +84,7 @@ class BrokerRepository:
 
         return list(query.order_by(OrderLifecycle.last_seen_at.desc()).limit(limit).all())
 
-    def list_position_lifecycles(self, status: str | None = None) -> list[PositionLifecycle]:
-        query = self.session.query(PositionLifecycle).order_by(PositionLifecycle.last_broker_seen_at.desc())
-        if status:
-            query = query.filter(PositionLifecycle.status == status)
-        return list(query.all())
+
 
     def upsert_order_lifecycle(self, order: BrokerOrder, *, seen_at: datetime) -> OrderLifecycle:
         lifecycle = (
@@ -118,40 +114,4 @@ class BrokerRepository:
 
         return lifecycle
 
-    def sync_position_lifecycles(
-        self,
-        positions: list[BrokerPosition],
-        *,
-        seen_at: datetime,
-    ) -> None:
-        seen_symbols = {position.symbol for position in positions}
-        for position in positions:
-            lifecycle = (
-                self.session.query(PositionLifecycle)
-                .filter(PositionLifecycle.symbol == position.symbol)
-                .first()
-            )
-            if lifecycle is None:
-                lifecycle = PositionLifecycle(symbol=position.symbol, opened_at=seen_at)
-                self.session.add(lifecycle)
 
-            lifecycle.status = "open"
-            lifecycle.closed_at = None
-            lifecycle.qty = position.qty
-            lifecycle.avg_entry_price = position.avg_entry_price
-            lifecycle.market_value = position.market_value
-            lifecycle.current_price = position.current_price
-            lifecycle.unrealized_pl = position.unrealized_pl
-            lifecycle.unrealized_plpc = position.unrealized_plpc
-            lifecycle.last_broker_seen_at = seen_at
-            lifecycle.data = position.model_dump(mode="json")
-
-        stale_positions = (
-            self.session.query(PositionLifecycle)
-            .filter(PositionLifecycle.status == "open")
-            .filter(~PositionLifecycle.symbol.in_(seen_symbols))
-            .all()
-        )
-        for lifecycle in stale_positions:
-            lifecycle.status = "missing_from_broker"
-            lifecycle.last_broker_seen_at = seen_at

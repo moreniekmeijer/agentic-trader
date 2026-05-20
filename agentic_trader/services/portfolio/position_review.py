@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from agentic_trader.agents.portfolio.agent import PortfolioDecision
 from agentic_trader.broker.models import BrokerSnapshot
-from agentic_trader.database.models import Decision, PositionLifecycle, PositionReviewRecord
+from agentic_trader.database.models import PositionMeta
+from agentic_trader.database.repositories.positions import PositionMetaRepository
+from agentic_trader.database.repositories.trades import TradeRepository
 from agentic_trader.decision.engine import DecisionEngine
 from agentic_trader.portfolio.policy import PortfolioPolicy
 from agentic_trader.services.market_data.providers.yahoo_finance import YahooFinanceProvider
@@ -36,6 +38,8 @@ class PositionReviewService:
         self.portfolio_agent = portfolio_agent
         self.decision_engine = decision_engine
         self.policy = policy or PortfolioPolicy.from_env()
+        self.pos_repo = PositionMetaRepository(session)
+        self.trade_repo = TradeRepository(session)
 
     def review_snapshot(self, snapshot: BrokerSnapshot) -> None:
         for position in snapshot.positions:
@@ -50,8 +54,8 @@ class PositionReviewService:
 
     def _review_position(self, position) -> PortfolioDecision:
         symbol = position.symbol
-        lifecycle = self._position_lifecycle(symbol)
-        deterministic = self._deterministic_review(position, lifecycle)
+        meta = self._position_meta(symbol)
+        deterministic = self._deterministic_review(position, meta)
         if deterministic is not None:
             return deterministic
 
@@ -66,7 +70,7 @@ class PositionReviewService:
 
         current_price = float(position.current_price or 0.0)
         unrealized_pnl_pct = float(position.unrealized_plpc or 0.0)
-        original_thesis = self._original_thesis(symbol, lifecycle)
+        original_thesis = self._original_thesis(symbol, meta)
 
         logger.info(
             "Reviewing %s | Price: %s | PnL: %.2f%%",
@@ -88,16 +92,16 @@ class PositionReviewService:
     def _deterministic_review(
         self,
         position,
-        lifecycle: PositionLifecycle | None,
+        meta: PositionMeta | None,
     ) -> PortfolioDecision | None:
-        if lifecycle is None or lifecycle.opened_at is None:
+        if meta is None or meta.created_at is None:
             return None
 
-        opened_at = lifecycle.opened_at
+        opened_at = meta.created_at
         if opened_at.tzinfo is None:
             opened_at = opened_at.replace(tzinfo=timezone.utc)
         holding_days = (datetime.now(timezone.utc) - opened_at).days
-        max_horizon = lifecycle.expected_horizon_days or self.policy.max_hold_days
+        max_horizon = meta.expected_horizon_days or self.policy.max_hold_days
 
         if holding_days > max_horizon:
             return PortfolioDecision(
@@ -113,26 +117,21 @@ class PositionReviewService:
 
         return None
 
-    def _position_lifecycle(self, symbol: str) -> PositionLifecycle | None:
-        return self.session.query(PositionLifecycle).filter_by(symbol=symbol.upper()).first()
+    def _position_meta(self, symbol: str) -> PositionMeta | None:
+        return self.pos_repo.get_by_symbol(symbol)
 
     def _original_thesis(
         self,
         symbol: str,
-        lifecycle: PositionLifecycle | None,
+        meta: PositionMeta | None,
     ) -> list[str]:
         thesis: list[str] = []
-        if lifecycle and lifecycle.thesis:
-            thesis.append(f"Thesis: {lifecycle.thesis}")
-        if lifecycle and lifecycle.invalidation:
-            thesis.append(f"Invalidation: {lifecycle.invalidation}")
+        if meta and meta.thesis:
+            thesis.append(f"Thesis: {meta.thesis}")
+        if meta and meta.invalidation:
+            thesis.append(f"Invalidation: {meta.invalidation}")
 
-        last_decision = (
-            self.session.query(Decision)
-            .filter_by(symbol=symbol, signal="BUY")
-            .order_by(Decision.timestamp.desc())
-            .first()
-        )
+        last_decision = self.trade_repo.get_last_buy_decision(symbol)
         if last_decision:
             thesis.extend(last_decision.reasoning)
 
@@ -162,13 +161,11 @@ class PositionReviewService:
         accepted: bool,
         rejection_reason: str | None,
     ) -> None:
-        self.session.add(
-            PositionReviewRecord(
-                symbol=symbol.upper(),
-                action=decision.action,
-                accepted=accepted,
-                rejection_reason=rejection_reason,
-                reasoning=decision.reasoning,
-                data={"source": "position_review"},
-            )
+        self.pos_repo.add_review_record(
+            symbol=symbol,
+            action=decision.action,
+            accepted=accepted,
+            rejection_reason=rejection_reason,
+            reasoning=decision.reasoning,
+            data={"source": "position_review"},
         )

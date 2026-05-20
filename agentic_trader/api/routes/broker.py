@@ -6,9 +6,8 @@ from agentic_trader.api.schemas import (
     BrokerSnapshotResponse,
     LifecycleMismatchResponse,
     OrderLifecycleResponse,
-    PositionLifecycleResponse,
 )
-from agentic_trader.database.models import PositionLifecycle, Trade
+from agentic_trader.database.models import Trade
 from agentic_trader.database.repositories.broker import BrokerRepository
 
 router = APIRouter(tags=["broker"])
@@ -49,19 +48,7 @@ def get_open_order_lifecycles(
     return repo.list_open_order_lifecycles(symbol=symbol, limit=limit)
 
 
-@router.get("/broker/positions", response_model=list[PositionLifecycleResponse])
-@router.get("/positions", response_model=list[PositionLifecycleResponse], include_in_schema=False)
-def get_position_lifecycles(status: str | None = None, session: Session = Depends(get_db)):
-    """Return persisted broker position lifecycle rows, not live Alpaca positions."""
-    repo = BrokerRepository(session)
-    return repo.list_position_lifecycles(status=status)
 
-
-@router.get("/broker/current-positions", response_model=list[PositionLifecycleResponse])
-def get_current_position_lifecycles(session: Session = Depends(get_db)):
-    """Return persisted broker positions that are currently open."""
-    repo = BrokerRepository(session)
-    return repo.list_position_lifecycles(status="open")
 
 
 @router.get("/broker/lifecycle-mismatches", response_model=list[LifecycleMismatchResponse])
@@ -71,26 +58,8 @@ def get_lifecycle_mismatches(
 ) -> list[LifecycleMismatchResponse]:
     """Return local lifecycle records that require operator attention."""
     mismatches: list[LifecycleMismatchResponse] = []
-    positions = (
-        session.query(PositionLifecycle)
-        .filter(PositionLifecycle.status != "open")
-        .order_by(PositionLifecycle.last_broker_seen_at.desc())
-        .limit(limit)
-        .all()
-    )
-    for position in positions:
-        mismatches.append(
-            LifecycleMismatchResponse(
-                source="position_lifecycle",
-                source_id=position.id,
-                symbol=position.symbol,
-                status=position.status,
-                reason=f"Position lifecycle is {position.status}",
-                detected_at=position.last_broker_seen_at,
-            )
-        )
-
-    remaining = max(0, limit - len(mismatches))
+    
+    remaining = limit
     trades = (
         session.query(Trade)
         .filter(Trade.needs_reconciliation.is_(True))

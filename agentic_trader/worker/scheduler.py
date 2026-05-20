@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from agentic_trader.broker.sync import sync_broker_snapshot
-from agentic_trader.database.models import MarketState
+from agentic_trader.database.repositories.market_state import MarketStateRepository
 from agentic_trader.database.session import get_session
 from agentic_trader.events.bus import EventBus
 from agentic_trader.events.models import (
@@ -49,8 +49,8 @@ async def _run_trading_cycle(bus: EventBus, context: WorkerContext) -> None:
         return
 
     with get_session() as session:
-        state = session.query(MarketState).filter_by(key="active_shortlist").first()
-        symbols = state.symbols if state else []
+        repo = MarketStateRepository(session)
+        symbols = repo.get_active_shortlist()
 
     if symbols:
         await bus.publish(BatchAnalysisRequestedEvent(timestamp=datetime.now(timezone.utc), symbols=symbols))

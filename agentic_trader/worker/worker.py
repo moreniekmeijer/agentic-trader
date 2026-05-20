@@ -1,3 +1,4 @@
+from pathlib import Path
 import asyncio
 import logging
 import os
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     setup_logging()
-    load_dotenv(os.getenv("ENV_FILE"))
+    load_dotenv(Path.home() / "Documents/secrets/agentic-trader/env")
     create_tables()
 
     logger.info("Starting agentic worker...")

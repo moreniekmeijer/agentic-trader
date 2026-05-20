@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 from agentic_trader.agents.models import AgentVote, AggregatedResponse
 
@@ -12,34 +11,22 @@ class PortfolioManager:
     def validate(
         self,
         response: AggregatedResponse,
-        *,
-        positions: Sequence[Any],
-        open_orders: Sequence[Any],
     ) -> AggregatedResponse:
         signal = self._normalize_signal(response.signal)
         reasons = list(response.reasoning)
 
         if signal == "BUY":
-            blocked_reason = self._buy_block_reason(response, positions, open_orders)
+            blocked_reason = self._buy_block_reason(response)
             if blocked_reason:
                 signal = "HOLD"
                 reasons.append(blocked_reason)
-
-        if signal in {"REDUCE", "EXIT"} and not self._has_position(response.symbol, positions):
-            reasons.append("No broker position exists; de-risking recommendation downgraded to HOLD.")
-            signal = "HOLD"
 
         return response.model_copy(update={"signal": signal, "reasoning": reasons})
 
     def _buy_block_reason(
         self,
         response: AggregatedResponse,
-        positions: Sequence[Any],
-        open_orders: Sequence[Any],
     ) -> str | None:
-        if self._has_open_order(response.symbol, open_orders):
-            return "Broker already has an open order for this symbol."
-
         if not self._has_non_sentiment_buy(response.votes):
             return "BUY rejected because sentiment alone cannot justify a new position."
 
@@ -100,17 +87,3 @@ class PortfolioManager:
         daily = snapshot.get("daily") or {}
 
         return daily.get("trend") == "BULLISH"
-
-    def _has_position(self, symbol: str, positions: Sequence[Any]) -> bool:
-        symbol = symbol.upper()
-        return any(str(_value(position, "symbol")).upper() == symbol for position in positions)
-
-    def _has_open_order(self, symbol: str, open_orders: Sequence[Any]) -> bool:
-        symbol = symbol.upper()
-        return any(str(_value(order, "symbol")).upper() == symbol for order in open_orders)
-
-
-def _value(obj: Any, name: str) -> Any:
-    if isinstance(obj, dict):
-        return obj.get(name)
-    return getattr(obj, name, None)

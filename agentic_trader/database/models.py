@@ -159,27 +159,19 @@ class OrderLifecycle(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
 
-class PositionLifecycle(Base):
-    """Latest broker-visible position state plus local thesis fields."""
+class PositionMeta(Base):
+    """Local thesis metadata for an open position."""
 
-    __tablename__ = "position_lifecycles"
+    __tablename__ = "position_meta"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, default="open", index=True)
-    opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    qty: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    avg_entry_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    market_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    current_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    unrealized_pl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    unrealized_plpc: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    decision_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("decisions.id"), nullable=True)
     thesis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     invalidation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     expected_horizon_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    last_broker_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class PositionReviewRecord(Base):
